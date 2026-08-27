@@ -1,0 +1,2 @@
+import { requireUser } from "@/lib/auth";import { query } from "@/lib/db";import { ok,fail } from "@/lib/api";
+export async function DELETE(req,{params}){try{const u=await requireUser();const {id}=await params;await query("update cash_entries set status='VOID',void_reason=$1,modified_by=$2,modified_at=now() where id=$3",[new URL(req.url).searchParams.get("reason")||"Voided",u.id,id]);return ok({ok:true});}catch(e){return fail(e.message,500)}}

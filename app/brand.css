@@ -1,0 +1,6 @@
+.companyBrand { display: flex; align-items: center; gap: 10px; }
+.companyBrand img { object-fit: contain; }
+.companyLogoFallback { display: grid; place-items: center; width: 56px; height: 42px; border-radius: 10px; background: linear-gradient(135deg,#17344c,#e2b866); color: #fff; font-weight: 900; letter-spacing: 1px; }
+.loginCard .companyBrand { justify-content: center; margin: 0 auto 18px; }
+.loginCard .companyBrand img { width: 160px; max-height: 100px; display: block; }
+.logoPreview { max-width: 180px; max-height: 100px; object-fit: contain; border: 1px solid var(--line); border-radius: 12px; padding: 8px; margin-top: 8px; }
