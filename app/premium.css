@@ -1,0 +1,17 @@
+:root{--navy:#08243a;--navy2:#123f5d;--gold:#e8bd67;--ink:#102a3d;--muted:#74889a;--bg:#f3f6f8;--line:#dce5ea;--green:#12a889;--red:#ef7d45;--blue:#2f78e8}
+body{background:linear-gradient(135deg,#eef3f6 0%,#f8f7f3 52%,#edf4f6 100%);letter-spacing:-.01em}
+.sidebar{width:288px;padding:22px 16px;background:radial-gradient(circle at 20% 5%,rgba(61,139,176,.2),transparent 24%),linear-gradient(180deg,#071f32,#0b2d45 58%,#061b2c);box-shadow:18px 0 55px rgba(8,36,58,.12)}
+.content{margin-left:288px;width:calc(100% - 288px);padding:20px 26px 48px;max-width:1800px}
+.brand{padding:0 9px 22px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:15px}.brand b{font-size:13px;letter-spacing:1.2px}.brand small{font-size:9px;letter-spacing:.7px}.brand img,.brand .companyLogoFallback{box-shadow:0 8px 26px rgba(0,0,0,.22)}
+.nav{gap:6px}.nav button{min-height:47px;border-radius:14px;padding:12px 14px;font-size:13px}.nav button.active{background:linear-gradient(90deg,rgba(232,189,103,.22),rgba(255,255,255,.075));border-color:rgba(232,189,103,.35);box-shadow:inset 4px 0 0 var(--gold),0 8px 24px rgba(0,0,0,.1)}
+.hero{min-height:216px;border-radius:28px;padding:30px 34px;background:radial-gradient(circle at 84% 18%,rgba(80,180,201,.25),transparent 24%),linear-gradient(120deg,#082943,#0d4261 58%,#276b78);box-shadow:0 22px 55px rgba(8,36,58,.2)}.hero h1{font-size:34px;letter-spacing:-1px}.hero p{font-size:12px}.clockBox{min-width:248px;padding:17px 20px;background:rgba(255,255,255,.1);backdrop-filter:blur(14px)}
+.pageHead{margin:25px 2px 15px}.pageHead h2{font-size:27px;letter-spacing:-.6px}.pageHead p{font-size:12px}
+.card{border:1px solid rgba(214,225,231,.9);border-radius:22px;padding:20px;box-shadow:0 12px 34px rgba(20,48,67,.07);transition:transform .18s ease,box-shadow .18s ease}.card:hover{transform:translateY(-1px);box-shadow:0 17px 42px rgba(20,48,67,.1)}
+.kpis{gap:14px}.kpi{position:relative;overflow:hidden;min-height:128px}.kpi:after{content:"";position:absolute;width:74px;height:74px;border-radius:50%;right:-24px;top:-24px;background:linear-gradient(135deg,rgba(47,120,232,.13),rgba(18,168,137,.08))}.kpi .label{font-size:10px;letter-spacing:1.2px}.kpi .value{font-size:27px;letter-spacing:-.8px}.kpi .note{font-size:10px}
+.grid2{gap:16px}.sectionTitle{font-size:18px}.sectionSub{font-size:11px}
+.field{gap:7px}.field label{font-size:11px;letter-spacing:.15px}.field input,.field select,.field textarea{min-height:44px;border-color:#d6e1e7;border-radius:13px;padding:11px 13px;background:#fbfcfd}.field input:focus,.field select:focus,.field textarea:focus{border-color:#548caa;box-shadow:0 0 0 4px rgba(47,120,232,.09);background:#fff}
+.btn{min-height:42px;border-radius:13px;padding:10px 16px;transition:transform .15s ease,box-shadow .15s ease}.btn:hover{transform:translateY(-1px)}.btnPrimary{background:linear-gradient(100deg,#10344e,#1e607e);box-shadow:0 8px 20px rgba(16,52,78,.18)}
+.tableWrap{border-radius:15px}table{font-size:12px}th{font-size:9px;background:#f2f6f8}th,td{padding:12px 13px}.tabs{gap:8px}.tab{padding:9px 14px;font-size:11px}.tab.active{background:linear-gradient(90deg,#0d314b,#1f5b77)}
+.notice{font-size:12px;border:1px solid rgba(18,168,137,.15)}.dateInput{min-height:42px}
+.installAppButton{width:100%;margin-bottom:8px;background:rgba(232,189,103,.15);color:#f4d28d;border:1px solid rgba(232,189,103,.25)}
+@media(max-width:1000px){.content{margin-left:0;width:100%;padding:12px}.sidebar{width:288px}.hero{min-height:auto}.hero h1{font-size:25px}}
