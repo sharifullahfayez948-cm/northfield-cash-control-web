@@ -4,8 +4,15 @@ import { query } from "../../../../lib/db";
 const GENERIC_MESSAGE =
   "If the account exists, a verification code has been sent to the registered email.";
 
+const COMPANY_NAME =
+  process.env.COMPANY_NAME || "Northfield Veterinary Clinic";
+
+const COMPANY_LOGO_URL =
+  process.env.COMPANY_LOGO_URL || "";
+
 function otpHash(code) {
-  const secret = process.env.SESSION_SECRET || "change-me-immediately";
+  const secret =
+    process.env.SESSION_SECRET || "change-me-immediately";
 
   return crypto
     .createHash("sha256")
@@ -38,15 +45,14 @@ export async function POST(request) {
 
     const user = result.rows[0];
 
-    // Do not reveal whether an account exists.
+    // Never reveal whether the account exists.
     if (!user || !user.email) {
       return Response.json({
         message: GENERIC_MESSAGE,
       });
     }
 
-    // Basic anti-spam protection:
-    // only one OTP request per minute per user.
+    // Prevent repeated OTP requests.
     const recent = await query(
       `
       SELECT id
@@ -69,7 +75,7 @@ export async function POST(request) {
       );
     }
 
-    // Invalidate old unused OTPs.
+    // Invalidate previous unused OTP codes.
     await query(
       `
       UPDATE password_reset_otps
@@ -110,65 +116,168 @@ export async function POST(request) {
       );
     }
 
+    const logoHtml = COMPANY_LOGO_URL
+      ? `
+        <div style="text-align:center;margin-bottom:18px;">
+          <img
+            src="${COMPANY_LOGO_URL}"
+            alt="${COMPANY_NAME}"
+            style="
+              max-width:180px;
+              max-height:90px;
+              object-fit:contain;
+              display:inline-block;
+            "
+          />
+        </div>
+      `
+      : "";
+
     const emailResponse = await fetch(
       "https://api.resend.com/emails",
       {
         method: "POST",
+
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
+
         body: JSON.stringify({
           from:
             process.env.EMAIL_FROM ||
-            "Northfield Cash Control <onboarding@resend.dev>",
+            `${COMPANY_NAME} <onboarding@resend.dev>`,
 
           to: [user.email],
 
-          subject:
-            "Northfield Cash Control - Password Reset Code",
+          subject: `${COMPANY_NAME} - Password Reset Code`,
 
           html: `
             <div style="
+              background:#f5f6f7;
+              padding:35px 15px;
               font-family:Arial,sans-serif;
-              max-width:520px;
-              margin:auto;
-              padding:30px;
-              color:#0b2942;
             ">
-              <h2>Northfield Cash Control</h2>
-
-              <p>Hello ${
-                user.display_name ||
-                user.username
-              },</p>
-
-              <p>
-                We received a request to reset your password.
-              </p>
 
               <div style="
-                font-size:32px;
-                font-weight:700;
-                letter-spacing:8px;
-                padding:20px;
-                margin:24px 0;
-                text-align:center;
-                background:#f4f6f8;
-                border-radius:12px;
+                max-width:520px;
+                margin:0 auto;
+                background:#ffffff;
+                border-radius:16px;
+                padding:36px 30px;
+                box-shadow:0 8px 30px rgba(0,0,0,0.08);
+                color:#102b3f;
               ">
-                ${otp}
+
+                ${logoHtml}
+
+                <div style="
+                  text-align:center;
+                  margin-bottom:28px;
+                ">
+                  <h2 style="
+                    margin:0;
+                    color:#0b2942;
+                    font-size:24px;
+                  ">
+                    ${COMPANY_NAME}
+                  </h2>
+
+                  <p style="
+                    margin:7px 0 0;
+                    color:#8a6a28;
+                    font-size:13px;
+                    letter-spacing:1px;
+                    text-transform:uppercase;
+                  ">
+                    Secure Password Recovery
+                  </p>
+                </div>
+
+                <p style="
+                  font-size:16px;
+                  line-height:1.6;
+                ">
+                  Hello ${
+                    user.display_name ||
+                    user.username
+                  },
+                </p>
+
+                <p style="
+                  font-size:15px;
+                  line-height:1.7;
+                  color:#475569;
+                ">
+                  We received a request to reset your password.
+                  Use the verification code below to continue.
+                </p>
+
+                <div style="
+                  margin:28px 0;
+                  padding:22px 15px;
+                  text-align:center;
+                  background:#f7f3e8;
+                  border:1px solid #e5d8b7;
+                  border-radius:14px;
+                ">
+
+                  <div style="
+                    font-size:12px;
+                    color:#7a6843;
+                    text-transform:uppercase;
+                    letter-spacing:1.5px;
+                    margin-bottom:10px;
+                  ">
+                    Verification Code
+                  </div>
+
+                  <div style="
+                    font-size:36px;
+                    font-weight:800;
+                    letter-spacing:10px;
+                    color:#0b2942;
+                  ">
+                    ${otp}
+                  </div>
+
+                </div>
+
+                <p style="
+                  font-size:14px;
+                  line-height:1.7;
+                  color:#475569;
+                ">
+                  This verification code expires in
+                  <strong>10 minutes</strong>.
+                </p>
+
+                <p style="
+                  font-size:14px;
+                  line-height:1.7;
+                  color:#64748b;
+                ">
+                  If you did not request a password reset,
+                  you can safely ignore this email.
+                </p>
+
+                <div style="
+                  height:1px;
+                  background:#e8eaed;
+                  margin:30px 0 20px;
+                "></div>
+
+                <p style="
+                  margin:0;
+                  text-align:center;
+                  font-size:12px;
+                  color:#94a3b8;
+                ">
+                  ${COMPANY_NAME}<br/>
+                  Automated security notification
+                </p>
+
               </div>
-
-              <p>
-                This verification code expires in
-                <strong>10 minutes</strong>.
-              </p>
-
-              <p>
-                If you did not request this reset,
-                you can safely ignore this email.
-              </p>
             </div>
           `,
         }),
