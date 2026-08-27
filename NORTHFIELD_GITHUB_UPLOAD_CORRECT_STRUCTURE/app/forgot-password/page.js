@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 export default function ForgotPassword() {
+  const router = useRouter();
+
   const [username, setUsername] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -11,6 +14,7 @@ export default function ForgotPassword() {
 
   async function sendOtp(e) {
     e.preventDefault();
+
     setError("");
     setMessage("");
     setLoading(true);
@@ -18,16 +22,26 @@ export default function ForgotPassword() {
     try {
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+        },
         body: JSON.stringify({ username }),
       });
 
       const data = await res.json();
 
       if (res.ok) {
-        setMessage(data.message || "OTP has been sent to your email.");
+        setMessage(
+          data.message || "Verification code has been sent to your email."
+        );
+
+        setTimeout(() => {
+          router.push(
+            `/reset-password?username=${encodeURIComponent(username)}`
+          );
+        }, 1000);
       } else {
-        setError(data.error || "Unable to send OTP.");
+        setError(data.error || "Unable to send verification code.");
       }
     } catch {
       setError("Something went wrong. Please try again.");
@@ -39,7 +53,10 @@ export default function ForgotPassword() {
   return (
     <main className="loginPage">
       <form className="loginCard" onSubmit={sendOtp}>
-        <img src="/northfield_logo_clean.png" alt="Northfield" />
+        <img
+          src="/northfield_logo_clean.png"
+          alt="Northfield Veterinary Clinic"
+        />
 
         <h1>Reset Password</h1>
 
@@ -48,10 +65,12 @@ export default function ForgotPassword() {
         </p>
 
         {error && <div className="notice error">{error}</div>}
+
         {message && <div className="notice">{message}</div>}
 
         <div className="field">
           <label>Username</label>
+
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
