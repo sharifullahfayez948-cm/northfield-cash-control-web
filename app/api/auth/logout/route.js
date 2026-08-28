@@ -1,1 +1,1 @@
-import { clearSession } from "@/lib/auth";import { ok } from "@/lib/api";export async function POST(){await clearSession();return ok({ok:true});}
+import { clearSession,currentUser } from "@/lib/auth";import { ok } from "@/lib/api";import { audit } from "@/lib/business";export async function POST(){const user=await currentUser();if(user)await audit(user.id,"LOGOUT","session",null,null,"Signed out").catch(()=>{});await clearSession();return ok({ok:true});}
