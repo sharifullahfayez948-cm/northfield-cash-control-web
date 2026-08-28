@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/cron/hourly-notifications", "schedule": "0 * * * *" }
+  ]
+}
