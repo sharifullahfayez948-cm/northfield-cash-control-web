@@ -9,6 +9,9 @@ export async function GET() {
     return ok({
       company_name: settings.company_name || "Northfield Veterinary Clinic",
       company_logo: settings.company_logo || "",
+      company_address: settings.company_address || "",
+      company_email: settings.company_email || "",
+      company_phone: settings.company_phone || "",
     });
   } catch (error) {
     return fail(error.message, 500);

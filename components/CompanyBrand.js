@@ -13,7 +13,7 @@ export default function CompanyBrand({ className = "", showName = false }) {
   }, []);
 
   return <div className={`companyBrand ${className}`.trim()}>
-    {company.company_logo ? <img src={company.company_logo} alt={company.company_name} /> : <div className="companyLogoFallback" aria-hidden="true">NF</div>}
+    <img src={company.company_logo || "/northfield-logo.png"} alt={company.company_name} />
     {showName && <strong>{company.company_name}</strong>}
   </div>;
 }
