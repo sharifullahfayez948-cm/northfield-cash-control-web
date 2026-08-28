@@ -1,10 +1,10 @@
-import { requireUser } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { ok,fail } from "@/lib/api";
 
 export async function GET(req){
   try{
-    await requireUser();
+    await requirePermission("reports");
     const url=new URL(req.url),from=url.searchParams.get("from")||new Date().toISOString().slice(0,8)+"01",to=url.searchParams.get("to")||new Date().toISOString().slice(0,10),scope=url.searchParams.get("scope")||"cash";
     let entries=[],summary={};
     if(scope==="bank"){

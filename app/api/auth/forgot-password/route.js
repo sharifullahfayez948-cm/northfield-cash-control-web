@@ -34,7 +34,7 @@ export async function POST(request) {
 
     const result = await query(
       `
-      SELECT id, username, display_name, email, active
+      SELECT id, username, display_name, email, role, active
       FROM users
       WHERE lower(username) = lower($1)
         AND active = true
@@ -45,8 +45,18 @@ export async function POST(request) {
 
     const user = result.rows[0];
 
+    const settingsResult = await query(
+      "SELECT key,value FROM settings WHERE key IN ('recovery_email','company_name','company_logo')"
+    );
+    const settings = Object.fromEntries(
+      settingsResult.rows.map((row) => [row.key, row.value])
+    );
+    const recipient = user?.role === "Super Admin" && settings.recovery_email
+      ? settings.recovery_email
+      : user?.email || settings.recovery_email;
+
     // Never reveal whether the account exists.
-    if (!user || !user.email) {
+    if (!user || !recipient) {
       return Response.json({
         message: GENERIC_MESSAGE,
       });
@@ -116,12 +126,14 @@ export async function POST(request) {
       );
     }
 
-    const logoHtml = COMPANY_LOGO_URL
+    const companyName = settings.company_name || COMPANY_NAME;
+    const companyLogo = settings.company_logo || COMPANY_LOGO_URL;
+    const logoHtml = companyLogo
       ? `
         <div style="text-align:center;margin-bottom:18px;">
           <img
-            src="${COMPANY_LOGO_URL}"
-            alt="${COMPANY_NAME}"
+            src="${companyLogo}"
+            alt="${companyName}"
             style="
               max-width:180px;
               max-height:90px;
@@ -146,11 +158,11 @@ export async function POST(request) {
         body: JSON.stringify({
           from:
             process.env.EMAIL_FROM ||
-            `${COMPANY_NAME} <onboarding@resend.dev>`,
+            `${companyName} <onboarding@resend.dev>`,
 
-          to: [user.email],
+          to: [recipient],
 
-          subject: `${COMPANY_NAME} - Password Reset Code`,
+          subject: `${companyName} - Password Reset Code`,
 
           html: `
             <div style="
@@ -180,7 +192,7 @@ export async function POST(request) {
                     color:#0b2942;
                     font-size:24px;
                   ">
-                    ${COMPANY_NAME}
+                    ${companyName}
                   </h2>
 
                   <p style="
@@ -273,7 +285,7 @@ export async function POST(request) {
                   font-size:12px;
                   color:#94a3b8;
                 ">
-                  ${COMPANY_NAME}<br/>
+                  ${companyName}<br/>
                   Automated security notification
                 </p>
 
