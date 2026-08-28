@@ -9,7 +9,7 @@ export async function GET(req){try{const u=await requireUser();const date=new UR
    coalesce(sum(case when direction='IN' and status='POSTED' then amount else 0 end),0) cash_in,
    coalesce(sum(case when direction='OUT' and status='POSTED' then amount else 0 end),0) cash_out
    from cash_entries where business_date between date_trunc('month',$1::date) and $1::date group by business_date
- ) select to_char(c.business_date,'YYYY-MM-DD') day,to_char(c.business_date,'DD') label,to_char(c.business_date,'Dy') weekday,
+ ) select to_char(c.business_date,'YYYY-MM-DD') business_day,to_char(c.business_date,'DD') label,to_char(c.business_date,'Dy') weekday,
  coalesce(t.cash_in,0) cash_in,coalesce(t.cash_out,0) cash_out
  from calendar c left join totals t using(business_date) order by c.business_date`,[date])
 ]);return ok({date,snap,bank,settings,latest:latest.rows,days:days.rows,user:u});}catch(e){return fail(e.message,e.message==="UNAUTHORIZED"?401:500)}}
