@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import CompanyBrand from "@/components/CompanyBrand";
+import FayezSignature from "@/components/FayezSignature";
 
 export default function Login() {
   const r = useRouter();
@@ -116,6 +117,8 @@ export default function Login() {
         >
           SIGN IN
         </button>
+
+        <FayezSignature />
       </form>
     </main>
   );
