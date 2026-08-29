@@ -27,7 +27,7 @@ export async function POST(req){
     const actor=await requireUser();admin(actor);await ensurePermissionsSchema();
     const body=await req.json();
     if(body.kind==="settings"){
-      const allowed=new Set(["company_name","company_address","company_email","company_phone","company_logo","daily_messages","recovery_email"]);
+      const allowed=new Set(["company_name","company_address","company_email","company_phone","company_logo","daily_messages","recovery_email","hero_greeting","hero_subtitle","hero_badge_one","hero_badge_two","hero_badge_three"]);
       for(const [key,raw] of Object.entries(body.values||{})){
         if(!allowed.has(key))continue;
         const value=String(raw||"").trim();
