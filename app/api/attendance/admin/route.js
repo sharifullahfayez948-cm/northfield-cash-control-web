@@ -2,6 +2,7 @@ import {
   requireUser,
   hashPassword,
   ensurePermissionsSchema,
+  ensureUserRolesSchema,
   PERMISSION_KEYS,
 } from "@/lib/auth";
 import { query } from "@/lib/db";
@@ -81,6 +82,7 @@ export async function POST(req) {
     const actor = await requireUser();
     manager(actor);
     await ensureAttendanceSchema();
+    await ensurePermissionsSchema();
     const b = await req.json();
     if (b.kind === "site") {
       const latitude = Number(b.latitude),
@@ -101,6 +103,7 @@ export async function POST(req) {
       return ok({ ok: true });
     }
     if (b.kind === "create_staff") {
+      await ensureUserRolesSchema();
       const username = String(b.username || "")
           .trim()
           .toLowerCase(),

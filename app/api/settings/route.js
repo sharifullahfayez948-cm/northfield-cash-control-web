@@ -2,6 +2,7 @@ import {
   requireUser,
   hashPassword,
   ensurePermissionsSchema,
+  ensureUserRolesSchema,
   PERMISSION_KEYS,
 } from "@/lib/auth";
 import { query, db } from "@/lib/db";
@@ -113,6 +114,7 @@ export async function POST(req) {
       return ok({ ok: true });
     }
     if (body.kind === "user") {
+      await ensureUserRolesSchema();
       const id = body.id ? Number(body.id) : null,
         username = String(body.username || "")
           .trim()
