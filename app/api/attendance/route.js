@@ -4,7 +4,7 @@ import { ok, fail } from "@/lib/api";
 import {
   ensureAttendanceSchema,
   nextAttendanceEvent,
-  verifyAttendanceToken,
+  distanceMeters,
 } from "@/lib/attendance";
 
 const dubaiDate = () =>
@@ -22,11 +22,11 @@ export async function GET() {
     const date = dubaiDate();
     const [events, profile, month] = await Promise.all([
       query(
-        "select id,event_type,event_time,source,note from attendance_events where user_id=$1 and work_date=$2 order by event_time",
+        "select id,event_type,event_time,source,note,distance_meters,outside_geofence,latitude,longitude,location_accuracy from attendance_events where user_id=$1 and work_date=$2 order by event_time",
         [user.id, date],
       ),
       query(
-        `select p.*,u.display_name,u.username from users u left join employee_profiles p on p.user_id=u.id where u.id=$1`,
+        `select p.*,u.display_name,u.username,u.email,u.role from users u left join employee_profiles p on p.user_id=u.id where u.id=$1`,
         [user.id],
       ),
       query(
@@ -59,11 +59,34 @@ export async function POST(req) {
     const user = await requireUser();
     await ensureAttendanceSchema();
     const body = await req.json();
-    if (!verifyAttendanceToken(body.token))
+    const site = (await query("select * from attendance_site where id=1"))
+      .rows[0];
+    if (!site || String(body.token) !== String(site.static_token))
+      return fail("Invalid workplace QR code.", 400);
+    const latitude = Number(body.latitude),
+      longitude = Number(body.longitude),
+      accuracy = Number(body.accuracy || 0);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude))
+      return fail("Location permission is required for attendance.", 400);
+    if (site.latitude == null || site.longitude == null)
       return fail(
-        "This QR code has expired. Scan the current code again.",
-        400,
+        "The manager must configure the workplace location first.",
+        409,
       );
+    const distance = distanceMeters(
+      latitude,
+      longitude,
+      Number(site.latitude),
+      Number(site.longitude),
+    );
+    const outside = distance > Number(site.radius_meters || 200),
+      ip = String(
+        req.headers.get("x-forwarded-for") ||
+          req.headers.get("x-real-ip") ||
+          "",
+      )
+        .split(",")[0]
+        .trim();
     const date = dubaiDate();
     const events = await query(
       "select event_type,event_time from attendance_events where user_id=$1 and work_date=$2 order by event_time",
@@ -79,14 +102,53 @@ export async function POST(req) {
         `Next allowed action is ${expected.replaceAll("_", " ")}.`,
         409,
       );
+    if (outside && site.block_outside) {
+      await query(
+        `insert into attendance_attempts(user_id,event_type,latitude,longitude,location_accuracy,distance_meters,accepted,reason,ip_address,device_label) values($1,$2,$3,$4,$5,$6,false,'OUTSIDE_GEOFENCE',$7,$8)`,
+        [
+          user.id,
+          requested,
+          latitude,
+          longitude,
+          accuracy,
+          distance,
+          ip,
+          String(body.deviceLabel || "").slice(0, 160),
+        ],
+      );
+      return fail(
+        `You are ${distance >= 1000 ? (distance / 1000).toFixed(2) + " km" : Math.round(distance) + " m"} away from the workplace. This attempt was logged.`,
+        403,
+      );
+    }
     const r = await query(
-      `insert into attendance_events(user_id,event_type,work_date,source,device_label,note) values($1,$2,$3,'QR',$4,$5) returning id,event_type,event_time`,
+      `insert into attendance_events(user_id,event_type,work_date,source,device_label,note,latitude,longitude,location_accuracy,distance_meters,outside_geofence,ip_address) values($1,$2,$3,'QR',$4,$5,$6,$7,$8,$9,$10,$11) returning id,event_type,event_time,distance_meters,outside_geofence`,
       [
         user.id,
         requested,
         date,
         String(body.deviceLabel || "").slice(0, 160),
         String(body.note || "").slice(0, 300),
+        latitude,
+        longitude,
+        accuracy,
+        distance,
+        outside,
+        ip,
+      ],
+    );
+    await query(
+      `insert into attendance_attempts(user_id,event_type,latitude,longitude,location_accuracy,distance_meters,accepted,reason,ip_address,device_label) values($1,$2,$3,$4,$5,$6,true,$7,$8,$9)`,
+      [
+        user.id,
+        requested,
+        latitude,
+        longitude,
+        accuracy,
+        distance,
+        outside ? "OUTSIDE_ALLOWED" : "WITHIN_GEOFENCE",
+        ip,
+        String(body.deviceLabel || "").slice(0, 160),
       ],
     );
     return ok({ event: r.rows[0] });

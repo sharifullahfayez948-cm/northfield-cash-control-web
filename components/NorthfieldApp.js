@@ -3027,12 +3027,22 @@ function EmployeePortal({ user }) {
     }
     setBusy(true);
     try {
+      const position = await new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        }),
+      );
       await api("/api/attendance", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           token: value,
           eventType,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
           deviceLabel: `${navigator.platform || "Device"} · ${navigator.userAgent.includes("Mobile") ? "Mobile" : "Desktop"}`,
         }),
       });
@@ -3044,7 +3054,11 @@ function EmployeePortal({ user }) {
       );
       await load();
     } catch (e) {
-      setMsg(e.message);
+      setMsg(
+        e.code === 1
+          ? "Location permission is required. Enable Precise Location and try again."
+          : e.message || "Could not verify your location.",
+      );
     } finally {
       setBusy(false);
     }
@@ -3062,7 +3076,12 @@ function EmployeePortal({ user }) {
         (result, _error, controls) => {
           if (result) {
             controls.stop();
-            submit(result.getText());
+            const scanned = result.getText();
+            if (d.nextEvent === "CLOCK_OUT") {
+              setToken(scanned.replace("northfield-attendance:", ""));
+              setScan(false);
+              setMsg("QR verified. Choose Start Break or Clock Out.");
+            } else submit(scanned);
           }
         },
       );
@@ -3128,6 +3147,34 @@ function EmployeePortal({ user }) {
           </span>
         </article>
       </div>
+      <section className="card employeeProfileStrip">
+        <div className="employeeProfileAvatar">
+          {String(user.name || "S")[0]}
+        </div>
+        <div>
+          <small>EMPLOYEE PROFILE</small>
+          <h3>{user.name}</h3>
+          <span>{p.job_title || "Staff"}</span>
+        </div>
+        <dl>
+          <div>
+            <dt>Email</dt>
+            <dd>{p.email || "—"}</dd>
+          </div>
+          <div>
+            <dt>Phone</dt>
+            <dd>{p.phone || "—"}</dd>
+          </div>
+          <div>
+            <dt>Committed Hours / Week</dt>
+            <dd>{p.committed_hours || 48}</dd>
+          </div>
+          <div>
+            <dt>Employee Code</dt>
+            <dd>{p.employee_code || "—"}</dd>
+          </div>
+        </dl>
+      </section>
       <div className="attendanceGrid">
         <section className="card attendanceAction">
           <div className="attendanceActionIcon">
@@ -3150,6 +3197,15 @@ function EmployeePortal({ user }) {
               disabled={busy || !token}
             >
               <Coffee /> START BREAK WITH CODE
+            </button>
+          )}
+          {d.nextEvent === "CLOCK_OUT" && token && (
+            <button
+              className="attendanceScan"
+              onClick={() => submit(token, "CLOCK_OUT")}
+              disabled={busy}
+            >
+              <LogOut /> CLOCK OUT
             </button>
           )}
           <div className="manualScan">
@@ -3252,14 +3308,33 @@ function AttendanceAdmin() {
   const [d, setD] = useState(),
     [qr, setQr] = useState(),
     [edit, setEdit] = useState(null),
+    [create, setCreate] = useState(null),
+    [siteEdit, setSiteEdit] = useState(null),
+    [filters, setFilters] = useState({
+      from: today().slice(0, 8) + "01",
+      to: today(),
+      userId: "0",
+    }),
     [msg, setMsg] = useState("");
-  const load = () => api("/api/attendance/admin").then(setD);
+  const load = (f = filters) =>
+    api(
+      `/api/attendance/admin?from=${f.from}&to=${f.to}&userId=${f.userId}`,
+    ).then((x) => {
+      setD(x);
+      if (!siteEdit && x.site)
+        setSiteEdit({
+          kind: "site",
+          siteName: x.site.site_name || "Northfield Clinic",
+          latitude: x.site.latitude || "",
+          longitude: x.site.longitude || "",
+          radiusMeters: x.site.radius_meters || 200,
+          blockOutside: x.site.block_outside !== false,
+        });
+    });
   const loadQr = () => api("/api/attendance/qr").then(setQr);
   useEffect(() => {
     load();
     loadQr();
-    const i = setInterval(loadQr, 30000);
-    return () => clearInterval(i);
   }, []);
   async function save(e) {
     e.preventDefault();
@@ -3272,6 +3347,120 @@ function AttendanceAdmin() {
     setMsg("Employee schedule saved.");
     load();
   }
+  async function createStaff(e) {
+    e.preventDefault();
+    await api("/api/attendance/admin", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...create, kind: "create_staff" }),
+    });
+    setCreate(null);
+    setMsg(
+      "Staff account created. Give the username and password directly to the employee.",
+    );
+    load();
+  }
+  async function saveSite(e) {
+    e.preventDefault();
+    await api("/api/attendance/admin", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(siteEdit),
+    });
+    setMsg("Workplace location and allowed radius saved.");
+    load();
+  }
+  function useCurrentLocation() {
+    navigator.geolocation.getCurrentPosition(
+      (p) =>
+        setSiteEdit({
+          ...siteEdit,
+          latitude: p.coords.latitude,
+          longitude: p.coords.longitude,
+        }),
+      () => setMsg("Allow location access to set the workplace position."),
+      { enableHighAccuracy: true },
+    );
+  }
+  function printQr() {
+    if (!qr) return;
+    const w = window.open("", "_blank");
+    w.document.write(
+      `<html><head><title>Northfield Attendance QR</title><style>body{font-family:Arial;text-align:center;padding:40px;color:#08243a}img{width:420px;max-width:90%}h1{margin-bottom:5px}p{color:#607585}</style></head><body><h1>Northfield Staff Attendance</h1><p>Scan with your Northfield employee account</p><img src="${qr.image}"/><p>${siteEdit?.siteName || "Northfield Clinic"}</p><script>onload=()=>print()<\/script></body></html>`,
+    );
+    w.document.close();
+  }
+  function excelReport() {
+    const rows = (d.summary || []).map((x) => ({
+      Date: String(x.work_date).slice(0, 10),
+      Employee: x.display_name,
+      "Clock In": attendanceTime(x.clock_in),
+      "Clock Out": attendanceTime(x.clock_out),
+      "Worked Minutes": x.worked_minutes,
+      "Late Minutes": x.late_minutes,
+      "Overtime Minutes": x.overtime_minutes,
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(rows),
+      "Attendance Summary",
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        (d.records || []).map((x) => ({
+          Date: String(x.work_date).slice(0, 10),
+          Employee: x.display_name,
+          Event: attendanceLabel(x.event_type),
+          Time: attendanceTime(x.event_time),
+          "Distance (m)": Number(x.distance_meters || 0).toFixed(0),
+          Latitude: x.latitude,
+          Longitude: x.longitude,
+        })),
+      ),
+      "Location Audit",
+    );
+    XLSX.writeFile(
+      wb,
+      `Northfield-Attendance-${filters.from}-${filters.to}.xlsx`,
+    );
+  }
+  function pdfReport() {
+    const doc = new jsPDF({ orientation: "landscape" });
+    doc.setFontSize(18);
+    doc.text("NORTHFIELD STAFF ATTENDANCE", 14, 16);
+    doc.setFontSize(9);
+    doc.text(`${filters.from} to ${filters.to}`, 14, 23);
+    autoTable(doc, {
+      startY: 29,
+      head: [
+        [
+          "Date",
+          "Employee",
+          "Clock In",
+          "Clock Out",
+          "Worked",
+          "Late",
+          "Overtime",
+        ],
+      ],
+      body: (d.summary || []).map((x) => [
+        String(x.work_date).slice(0, 10),
+        x.display_name,
+        attendanceTime(x.clock_in),
+        attendanceTime(x.clock_out),
+        x.worked_minutes == null
+          ? "Open"
+          : `${Math.floor(x.worked_minutes / 60)}h ${x.worked_minutes % 60}m`,
+        `${x.late_minutes || 0}m`,
+        `${x.overtime_minutes || 0}m`,
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [8, 36, 58] },
+    });
+    doc.save(`Northfield-Attendance-${filters.from}-${filters.to}.pdf`);
+  }
   if (!d) return <Loading />;
   return (
     <>
@@ -3279,27 +3468,119 @@ function AttendanceAdmin() {
         title="Staff Attendance"
         sub="Live QR clock-in, schedules and private employee time records."
         actions={
-          <button className="btn btnSoft" onClick={load}>
-            <RefreshCw size={15} />
-          </button>
+          <div className="attendanceHeadActions">
+            <button
+              className="btn btnPrimary"
+              onClick={() =>
+                setCreate({
+                  name: "",
+                  username: "",
+                  email: "",
+                  phone: "",
+                  password: "",
+                  employeeCode: "",
+                  jobTitle: "Staff",
+                  committedHours: 48,
+                  shiftStart: "09:00",
+                  shiftEnd: "18:00",
+                  breakMinutes: 60,
+                  graceMinutes: 10,
+                  workDays: "1,2,3,4,5,6",
+                  overtimeRequiresApproval: true,
+                })
+              }
+            >
+              <PlusCircle size={15} /> ADD STAFF
+            </button>
+            <button className="btn btnSoft" onClick={() => load()}>
+              <RefreshCw size={15} />
+            </button>
+          </div>
         }
       />
       <div className="attendanceAdminGrid">
         <section className="card qrStation">
-          <small>LIVE WORKPLACE QR</small>
+          <small>PERMANENT WORKPLACE QR</small>
           <h3>Scan to clock in or out</h3>
           <p>
-            This secure code refreshes every 45 seconds and cannot be reused
-            later.
+            Print this QR once. Every scan requires the employee’s live GPS
+            location.
           </p>
           {qr ? (
             <img src={qr.image} alt="Live Northfield attendance QR" />
           ) : (
             <Loading />
           )}
-          <div className="qrPulse">
-            <i /> AUTO-REFRESHING
+          <div className="qrPrintActions">
+            <button className="btn btnPrimary" onClick={printQr}>
+              <FileText size={14} /> PRINT QR
+            </button>
           </div>
+          {siteEdit && (
+            <form className="siteConfig" onSubmit={saveSite}>
+              <div className="field">
+                <label>Workplace Name</label>
+                <input
+                  value={siteEdit.siteName}
+                  onChange={(e) =>
+                    setSiteEdit({ ...siteEdit, siteName: e.target.value })
+                  }
+                />
+              </div>
+              <div className="siteCoordinates">
+                <div className="field">
+                  <label>Latitude</label>
+                  <input
+                    value={siteEdit.latitude}
+                    onChange={(e) =>
+                      setSiteEdit({ ...siteEdit, latitude: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Longitude</label>
+                  <input
+                    value={siteEdit.longitude}
+                    onChange={(e) =>
+                      setSiteEdit({ ...siteEdit, longitude: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btnSoft"
+                onClick={useCurrentLocation}
+              >
+                <ScanLine size={14} /> USE THIS DEVICE LOCATION
+              </button>
+              <div className="field">
+                <label>Allowed Radius (meters)</label>
+                <input
+                  type="number"
+                  min="20"
+                  value={siteEdit.radiusMeters}
+                  onChange={(e) =>
+                    setSiteEdit({ ...siteEdit, radiusMeters: e.target.value })
+                  }
+                />
+              </div>
+              <label className="activeToggle">
+                <input
+                  type="checkbox"
+                  checked={siteEdit.blockOutside}
+                  onChange={(e) =>
+                    setSiteEdit({ ...siteEdit, blockOutside: e.target.checked })
+                  }
+                />
+                <span />
+                <b>Block scans outside this radius</b>
+              </label>
+              <button className="btn btnPrimary">
+                SAVE WORKPLACE LOCATION
+              </button>
+            </form>
+          )}
         </section>
         <section className="card attendanceRoster">
           <div className="cardHeader">
@@ -3358,6 +3639,9 @@ function AttendanceAdmin() {
                   setEdit({
                     userId: u.id,
                     employeeCode: u.employee_code || "",
+                    jobTitle: u.job_title || "Staff",
+                    phone: u.phone || "",
+                    committedHours: u.committed_hours ?? 48,
                     shiftStart: String(u.shift_start || "09:00").slice(0, 5),
                     shiftEnd: String(u.shift_end || "18:00").slice(0, 5),
                     breakMinutes: u.break_minutes ?? 60,
@@ -3374,6 +3658,346 @@ function AttendanceAdmin() {
           ))}
         </div>
       </section>
+      <section className="card attendanceReports">
+        <div className="cardHeader">
+          <div>
+            <div className="sectionTitle">Attendance Reports</div>
+            <div className="sectionSub">
+              Choose one employee or the full team, then export PDF or Excel.
+            </div>
+          </div>
+        </div>
+        <div className="attendanceFilters">
+          <label>
+            Employee
+            <select
+              value={filters.userId}
+              onChange={(e) =>
+                setFilters({ ...filters, userId: e.target.value })
+              }
+            >
+              <option value="0">All Employees</option>
+              {d.staff.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            From
+            <input
+              type="date"
+              value={filters.from}
+              onChange={(e) => setFilters({ ...filters, from: e.target.value })}
+            />
+          </label>
+          <label>
+            To
+            <input
+              type="date"
+              value={filters.to}
+              onChange={(e) => setFilters({ ...filters, to: e.target.value })}
+            />
+          </label>
+          <button className="btn btnPrimary" onClick={() => load(filters)}>
+            RUN REPORT
+          </button>
+          <button className="btn btnSoft" onClick={pdfReport}>
+            PDF
+          </button>
+          <button className="btn btnSoft" onClick={excelReport}>
+            EXCEL
+          </button>
+        </div>
+        <div className="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Employee</th>
+                <th>Clock In</th>
+                <th>Clock Out</th>
+                <th>Worked</th>
+                <th>Late</th>
+                <th>Overtime</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(d.summary || []).map((x, i) => (
+                <tr key={`${x.display_name}-${x.work_date}-${i}`}>
+                  <td>{String(x.work_date).slice(0, 10)}</td>
+                  <td>{x.display_name}</td>
+                  <td>{attendanceTime(x.clock_in)}</td>
+                  <td>{attendanceTime(x.clock_out)}</td>
+                  <td>
+                    {x.worked_minutes == null
+                      ? "Open"
+                      : `${Math.floor(x.worked_minutes / 60)}h ${x.worked_minutes % 60}m`}
+                  </td>
+                  <td>{x.late_minutes || 0}m</td>
+                  <td>{x.overtime_minutes || 0}m</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <details className="locationAudit">
+          <summary>Location Audit · {(d.records || []).length} scans</summary>
+          <div className="tableWrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Employee</th>
+                  <th>Event</th>
+                  <th>Distance</th>
+                  <th>Map</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(d.records || []).map((x) => (
+                  <tr key={x.id}>
+                    <td>{String(x.work_date).slice(0, 10)}</td>
+                    <td>{x.display_name}</td>
+                    <td>{attendanceLabel(x.event_type)}</td>
+                    <td>
+                      {Number(x.distance_meters || 0) >= 1000
+                        ? `${(Number(x.distance_meters) / 1000).toFixed(2)} km`
+                        : `${Number(x.distance_meters || 0).toFixed(0)} m`}
+                    </td>
+                    <td>
+                      {x.latitude ? (
+                        <a
+                          target="_blank"
+                          rel="noreferrer"
+                          href={`https://www.google.com/maps?q=${x.latitude},${x.longitude}`}
+                          className={
+                            x.outside_geofence
+                              ? "locationOutside"
+                              : "locationOk"
+                          }
+                        >
+                          VIEW MAP
+                        </a>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+        {(d.attempts || []).some((x) => !x.accepted) && (
+          <>
+            <div className="outsideAttempts">
+              <AlertTriangle />
+              <div>
+                <b>Blocked outside-location attempts</b>
+                <span>
+                  {d.attempts.filter((x) => !x.accepted).length} attempt(s) were
+                  blocked and preserved in the audit log.
+                </span>
+              </div>
+            </div>
+            <details className="locationAudit blockedAudit">
+              <summary>Open blocked attempts</summary>
+              <div className="tableWrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Time</th>
+                      <th>Attempt</th>
+                      <th>Distance</th>
+                      <th>Exact Location</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.attempts
+                      .filter((x) => !x.accepted)
+                      .map((x) => (
+                        <tr key={x.id}>
+                          <td>{x.display_name || "Unknown"}</td>
+                          <td>{new Date(x.attempted_at).toLocaleString()}</td>
+                          <td>{attendanceLabel(x.event_type)}</td>
+                          <td>
+                            {Number(x.distance_meters || 0) >= 1000
+                              ? `${(Number(x.distance_meters) / 1000).toFixed(2)} km`
+                              : `${Number(x.distance_meters || 0).toFixed(0)} m`}
+                          </td>
+                          <td>
+                            <a
+                              target="_blank"
+                              rel="noreferrer"
+                              className="locationOutside"
+                              href={`https://www.google.com/maps?q=${x.latitude},${x.longitude}`}
+                            >
+                              VIEW ON MAP
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </>
+        )}
+      </section>
+      {create && (
+        <div className="modalShade">
+          <div className="luxModal staffCreator">
+            <form onSubmit={createStaff}>
+              <div className="modalHead">
+                <div>
+                  <small>NEW EMPLOYEE ACCOUNT</small>
+                  <h3>Add Staff</h3>
+                  <p>Create login, role and working schedule together.</p>
+                </div>
+                <button type="button" onClick={() => setCreate(null)}>
+                  <X />
+                </button>
+              </div>
+              <div className="formGrid">
+                <div className="field">
+                  <label>Full Name</label>
+                  <input
+                    required
+                    value={create.name}
+                    onChange={(e) =>
+                      setCreate({ ...create, name: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Job Title</label>
+                  <input
+                    value={create.jobTitle}
+                    onChange={(e) =>
+                      setCreate({ ...create, jobTitle: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Username</label>
+                  <input
+                    required
+                    value={create.username}
+                    onChange={(e) =>
+                      setCreate({ ...create, username: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Temporary Password (8+ characters)</label>
+                  <input
+                    required
+                    minLength="8"
+                    type="password"
+                    value={create.password}
+                    onChange={(e) =>
+                      setCreate({ ...create, password: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Email</label>
+                  <input
+                    type="email"
+                    value={create.email}
+                    onChange={(e) =>
+                      setCreate({ ...create, email: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Phone</label>
+                  <input
+                    value={create.phone}
+                    onChange={(e) =>
+                      setCreate({ ...create, phone: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Employee Code</label>
+                  <input
+                    value={create.employeeCode}
+                    onChange={(e) =>
+                      setCreate({ ...create, employeeCode: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Committed Hours / Week</label>
+                  <input
+                    type="number"
+                    value={create.committedHours}
+                    onChange={(e) =>
+                      setCreate({ ...create, committedHours: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Shift Start</label>
+                  <input
+                    type="time"
+                    value={create.shiftStart}
+                    onChange={(e) =>
+                      setCreate({ ...create, shiftStart: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Shift End</label>
+                  <input
+                    type="time"
+                    value={create.shiftEnd}
+                    onChange={(e) =>
+                      setCreate({ ...create, shiftEnd: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Break Minutes</label>
+                  <input
+                    type="number"
+                    value={create.breakMinutes}
+                    onChange={(e) =>
+                      setCreate({ ...create, breakMinutes: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Grace Minutes</label>
+                  <input
+                    type="number"
+                    value={create.graceMinutes}
+                    onChange={(e) =>
+                      setCreate({ ...create, graceMinutes: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="modalActions">
+                <button
+                  type="button"
+                  className="btn btnSoft"
+                  onClick={() => setCreate(null)}
+                >
+                  CANCEL
+                </button>
+                <button className="btn btnPrimary">
+                  <PlusCircle /> CREATE STAFF ACCOUNT
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       {edit && (
         <div className="modalShade">
           <div className="luxModal">
@@ -3394,6 +4018,34 @@ function AttendanceAdmin() {
                     value={edit.employeeCode}
                     onChange={(e) =>
                       setEdit({ ...edit, employeeCode: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Job Title</label>
+                  <input
+                    value={edit.jobTitle}
+                    onChange={(e) =>
+                      setEdit({ ...edit, jobTitle: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Phone</label>
+                  <input
+                    value={edit.phone}
+                    onChange={(e) =>
+                      setEdit({ ...edit, phone: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>Committed Hours / Week</label>
+                  <input
+                    type="number"
+                    value={edit.committedHours}
+                    onChange={(e) =>
+                      setEdit({ ...edit, committedHours: e.target.value })
                     }
                   />
                 </div>
@@ -4020,13 +4672,13 @@ function ControlLuxury() {
 }
 const ITEMS = [
   ["Dashboard", LayoutDashboard, "dashboard"],
-  ["My Attendance", Clock3, "attendance"],
-  ["Staff Attendance", QrCode, "attendance_admin"],
   ["New Transaction", PlusCircle, "transactions"],
   ["Money Movements", ArrowLeftRight, "movements"],
   ["Daily Closing", CheckCircle2, "closing"],
   ["Emirates Islamic", Landmark, "bank"],
   ["Iran / Dubai", Globe2, "transfer"],
+  ["My Attendance", Clock3, "attendance"],
+  ["Staff Attendance", QrCode, "attendance_admin"],
   ["Reports", FileText, "reports"],
   ["Directory", Users, "directory"],
   ["Control Center", Settings, "control"],
