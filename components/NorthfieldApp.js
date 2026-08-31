@@ -38,6 +38,10 @@ import {
   ScanLine,
   Coffee,
   UserCheck,
+  CalendarCheck,
+  Timer,
+  Target,
+  Plane,
 } from "lucide-react";
 import FayezSignature from "@/components/FayezSignature";
 import * as XLSX from "xlsx";
@@ -3008,7 +3012,9 @@ function EmployeePortal({ user }) {
     [token, setToken] = useState(""),
     [busy, setBusy] = useState(false),
     [scan, setScan] = useState(false),
-    [msg, setMsg] = useState("");
+    [msg, setMsg] = useState(""),
+    [now, setNow] = useState(Date.now()),
+    [leave, setLeave] = useState(null);
   const load = () =>
     api("/api/attendance")
       .then(setD)
@@ -3016,6 +3022,10 @@ function EmployeePortal({ user }) {
   useEffect(() => {
     load();
     return () => window.__northfieldQrControls?.stop?.();
+  }, []);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
   }, []);
   async function submit(raw, eventType) {
     const value = String(raw || token)
@@ -3077,11 +3087,7 @@ function EmployeePortal({ user }) {
           if (result) {
             controls.stop();
             const scanned = result.getText();
-            if (d.nextEvent === "CLOCK_OUT") {
-              setToken(scanned.replace("northfield-attendance:", ""));
-              setScan(false);
-              setMsg("QR verified. Choose Start Break or Clock Out.");
-            } else submit(scanned);
+            submit(scanned, d.nextEvent);
           }
         },
       );
@@ -3095,12 +3101,46 @@ function EmployeePortal({ user }) {
     window.__northfieldQrControls?.stop?.();
     setScan(false);
   }
+  async function requestLeave(e) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api("/api/attendance", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...leave, kind: "leave" }),
+      });
+      setLeave(null);
+      setMsg("Leave request sent to your manager.");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
   if (!d)
     return <>{msg ? <div className="notice error">{msg}</div> : <Loading />}</>;
   const p = d.profile || {},
     events = d.events || [],
     inside =
-      events.length && events[events.length - 1].event_type !== "CLOCK_OUT";
+      events.length && events[events.length - 1].event_type !== "CLOCK_OUT",
+    clockIn = events.find((x) => x.event_type === "CLOCK_IN")?.event_time,
+    elapsedSeconds =
+      inside && clockIn
+        ? Math.max(0, Math.floor((now - new Date(clockIn).getTime()) / 1000))
+        : 0,
+    elapsed = `${String(Math.floor(elapsedSeconds / 3600)).padStart(2, "0")}:${String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, "0")}:${String(elapsedSeconds % 60).padStart(2, "0")}`,
+    fmtMinutes = (value) =>
+      `${Math.floor(Number(value || 0) / 60)}h ${Number(value || 0) % 60}m`,
+    monthTarget = Math.round(Number(p.committed_hours || 48) * 4.33 * 60),
+    monthMinutes = Number(d.totals?.month_minutes || 0),
+    targetProgress = Math.min(
+      100,
+      Math.round((monthMinutes / Math.max(1, monthTarget)) * 100),
+    ),
+    trendMax = Math.max(
+      1,
+      ...(d.trend || []).map((x) => Number(x.minutes || 0)),
+    );
   return (
     <div className="attendancePortal">
       <div className="attendanceWelcome">
@@ -3140,13 +3180,145 @@ function EmployeePortal({ user }) {
           </span>
         </article>
         <article>
-          <Coffee />
+          <Timer />
           <span>
-            <small>BREAK</small>
-            <b>{Number(p.break_minutes ?? 60)} minutes</b>
+            <small>TODAY TOTAL</small>
+            <b>{inside ? elapsed : fmtMinutes(d.totals?.today_minutes)}</b>
+          </span>
+        </article>
+        <article>
+          <Target />
+          <span>
+            <small>MONTH TARGET</small>
+            <b>
+              {targetProgress}% · {fmtMinutes(monthTarget)}
+            </b>
           </span>
         </article>
       </div>
+      <section className={`staffLiveClock ${inside ? "running" : ""}`}>
+        <div>
+          <small>
+            {inside
+              ? `IN SINCE ${attendanceTime(clockIn)}`
+              : "READY FOR YOUR SHIFT"}
+          </small>
+          <strong>{inside ? elapsed : "00:00:00"}</strong>
+          <span>
+            {inside
+              ? "Your working time is counting live"
+              : "Scan the workplace QR to begin"}
+          </span>
+        </div>
+        <div
+          className="staffClockRing"
+          style={{
+            "--progress": `${Math.min(100, (elapsedSeconds / 28800) * 100)}%`,
+          }}
+        >
+          <b>{Math.min(100, Math.round((elapsedSeconds / 28800) * 100))}%</b>
+          <small>8H TARGET</small>
+        </div>
+      </section>
+      <div className="staffMetricGrid">
+        <article>
+          <Clock3 />
+          <small>Today</small>
+          <b>{inside ? elapsed : fmtMinutes(d.totals?.today_minutes)}</b>
+        </article>
+        <article>
+          <CalendarCheck />
+          <small>This month</small>
+          <b>{fmtMinutes(monthMinutes)}</b>
+        </article>
+        <article>
+          <Target />
+          <small>Monthly target</small>
+          <b>{fmtMinutes(monthTarget)}</b>
+        </article>
+        <article>
+          <Plane />
+          <small>Leave requests</small>
+          <b>{(d.leaves || []).length}</b>
+        </article>
+      </div>
+      <section className="card staffTrendCard">
+        <div className="cardHeader">
+          <div>
+            <div className="sectionTitle">My working trend</div>
+            <div className="sectionSub">
+              Actual hours across the last six months
+            </div>
+          </div>
+          <button
+            className="btn btnSoft"
+            onClick={() =>
+              setLeave({
+                leaveType: "ANNUAL",
+                dateFrom: today(),
+                dateTo: today(),
+                note: "",
+              })
+            }
+          >
+            <Plane /> REQUEST LEAVE
+          </button>
+        </div>
+        <div className="staffTrendChart">
+          {(d.trend || []).map((x) => (
+            <div key={x.month}>
+              <span
+                style={{
+                  height: `${Math.max(4, (Number(x.minutes || 0) / trendMax) * 100)}%`,
+                }}
+              >
+                <i>{fmtMinutes(x.minutes)}</i>
+              </span>
+              <small>
+                {new Date(x.month).toLocaleDateString("en", { month: "short" })}
+              </small>
+            </div>
+          ))}
+        </div>
+        <div className="staffTargetProgress">
+          <span>
+            <b style={{ width: `${targetProgress}%` }} />
+          </span>
+          <small>{targetProgress}% of this month’s target completed</small>
+        </div>
+      </section>
+      {(d.leaves || []).length > 0 && (
+        <section className="card staffUpdates">
+          <div className="cardHeader">
+            <div>
+              <div className="sectionTitle">My staff updates</div>
+              <div className="sectionSub">
+                Attendance and leave decisions only
+              </div>
+            </div>
+            <Bell />
+          </div>
+          <div className="staffUpdateList">
+            {d.leaves.slice(0, 4).map((item) => (
+              <article key={item.id}>
+                <Plane />
+                <div>
+                  <b>{item.leave_type} leave</b>
+                  <span>
+                    {String(item.date_from).slice(0, 10)} →{" "}
+                    {String(item.date_to).slice(0, 10)}
+                  </span>
+                </div>
+                <em
+                  className={`leaveStatus ${String(item.status).toLowerCase()}`}
+                >
+                  {item.status}
+                </em>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
       <section className="card employeeProfileStrip">
         <div className="employeeProfileAvatar">
           {String(user.name || "S")[0]}
@@ -3190,24 +3362,6 @@ function EmployeePortal({ user }) {
             <QrCode />
             {busy ? "RECORDING…" : "SCAN OFFICE QR"}
           </button>
-          {d.nextEvent === "CLOCK_OUT" && (
-            <button
-              className="breakAction"
-              onClick={() => submit(token, "BREAK_START")}
-              disabled={busy || !token}
-            >
-              <Coffee /> START BREAK WITH CODE
-            </button>
-          )}
-          {d.nextEvent === "CLOCK_OUT" && token && (
-            <button
-              className="attendanceScan"
-              onClick={() => submit(token, "CLOCK_OUT")}
-              disabled={busy}
-            >
-              <LogOut /> CLOCK OUT
-            </button>
-          )}
           <div className="manualScan">
             <input
               value={token}
@@ -3300,6 +3454,81 @@ function EmployeePortal({ user }) {
           </div>
         </div>
       )}
+      {leave && (
+        <div className="modalShade">
+          <div className="luxModal leaveRequestModal">
+            <form onSubmit={requestLeave}>
+              <div className="modalHead">
+                <div>
+                  <small>STAFF REQUEST</small>
+                  <h3>Request leave</h3>
+                  <p>Your manager will review and decide.</p>
+                </div>
+                <button type="button" onClick={() => setLeave(null)}>
+                  <X />
+                </button>
+              </div>
+              <div className="leaveTypePicker">
+                {["ANNUAL", "SICK", "UNPAID", "OTHER"].map((type) => (
+                  <button
+                    type="button"
+                    className={leave.leaveType === type ? "active" : ""}
+                    onClick={() => setLeave({ ...leave, leaveType: type })}
+                    key={type}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+              <div className="formGrid">
+                <div className="field">
+                  <label>From</label>
+                  <input
+                    required
+                    type="date"
+                    value={leave.dateFrom}
+                    onChange={(e) =>
+                      setLeave({ ...leave, dateFrom: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label>To</label>
+                  <input
+                    required
+                    type="date"
+                    value={leave.dateTo}
+                    onChange={(e) =>
+                      setLeave({ ...leave, dateTo: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="field">
+                <label>Note (optional)</label>
+                <textarea
+                  rows="4"
+                  value={leave.note}
+                  onChange={(e) => setLeave({ ...leave, note: e.target.value })}
+                  placeholder="Anything your manager should know"
+                />
+              </div>
+              <div className="modalActions">
+                <button
+                  type="button"
+                  className="btn btnSoft"
+                  onClick={() => setLeave(null)}
+                >
+                  CANCEL
+                </button>
+                <button disabled={busy} className="btn btnPrimary">
+                  <Plane /> SUBMIT REQUEST
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3370,6 +3599,15 @@ function AttendanceAdmin() {
     setMsg("Workplace location and allowed radius saved.");
     load();
   }
+  async function decideLeave(leaveId, status) {
+    await api("/api/attendance/admin", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "leave_decision", leaveId, status }),
+    });
+    setMsg(`Leave request ${status.toLowerCase()}.`);
+    load();
+  }
   function useCurrentLocation() {
     navigator.geolocation.getCurrentPosition(
       (p) =>
@@ -3426,14 +3664,69 @@ function AttendanceAdmin() {
       `Northfield-Attendance-${filters.from}-${filters.to}.xlsx`,
     );
   }
-  function pdfReport() {
+  async function pdfReport() {
     const doc = new jsPDF({ orientation: "landscape" });
-    doc.setFontSize(18);
-    doc.text("NORTHFIELD STAFF ATTENDANCE", 14, 16);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    doc.setFillColor(6, 35, 52);
+    doc.roundedRect(8, 8, pageWidth - 16, 35, 4, 4, "F");
+    try {
+      const logo = await imageData("/northfield_logo_clean.png");
+      doc.addImage(logo, "PNG", 14, 13, 29, 24);
+    } catch {}
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(19);
+    doc.text("STAFF TIME & ATTENDANCE", 49, 22);
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.text(`${filters.from} to ${filters.to}`, 14, 23);
+    doc.setTextColor(162, 200, 211);
+    doc.text(
+      `${siteEdit?.siteName || "Northfield Clinic"}  |  ${filters.from} to ${filters.to}`,
+      49,
+      29,
+    );
+    const completed = (d.summary || []).filter((x) => x.worked_minutes != null),
+      totalMinutes = completed.reduce(
+        (sum, x) => sum + Number(x.worked_minutes || 0),
+        0,
+      ),
+      lateMinutes = completed.reduce(
+        (sum, x) => sum + Number(x.late_minutes || 0),
+        0,
+      ),
+      overtimeMinutes = completed.reduce(
+        (sum, x) => sum + Number(x.overtime_minutes || 0),
+        0,
+      ),
+      cards = [
+        [
+          "TOTAL WORKED",
+          `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`,
+        ],
+        ["LATE TIME", `${lateMinutes} min`],
+        ["OVERTIME", `${overtimeMinutes} min`],
+        ["COMPLETED DAYS", String(completed.length)],
+      ];
+    cards.forEach(([label, value], index) => {
+      const x = 9 + index * ((pageWidth - 18) / 4),
+        width = (pageWidth - 24) / 4;
+      doc.setFillColor(
+        index === 0 ? 225 : 242,
+        index === 0 ? 247 : 247,
+        index === 0 ? 240 : 249,
+      );
+      doc.setDrawColor(202, 222, 228);
+      doc.roundedRect(x, 48, width, 20, 3, 3, "FD");
+      doc.setTextColor(91, 119, 131);
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      doc.text(label, x + 5, 55);
+      doc.setTextColor(8, 45, 64);
+      doc.setFontSize(12);
+      doc.text(value, x + 5, 64);
+    });
     autoTable(doc, {
-      startY: 29,
+      startY: 75,
       head: [
         [
           "Date",
@@ -3456,8 +3749,32 @@ function AttendanceAdmin() {
         `${x.late_minutes || 0}m`,
         `${x.overtime_minutes || 0}m`,
       ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [8, 36, 58] },
+      styles: {
+        fontSize: 8,
+        cellPadding: 3.2,
+        textColor: [37, 67, 81],
+        lineColor: [214, 229, 234],
+        lineWidth: 0.15,
+      },
+      headStyles: {
+        fillColor: [9, 64, 83],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+      },
+      alternateRowStyles: { fillColor: [244, 249, 250] },
+      didDrawPage: () => {
+        const h = doc.internal.pageSize.getHeight();
+        doc.setDrawColor(20, 106, 126);
+        doc.setLineWidth(0.5);
+        doc.rect(7, 7, pageWidth - 14, h - 14);
+        doc.setTextColor(112, 137, 147);
+        doc.setFontSize(7);
+        doc.text(
+          `Northfield Staff Control · Generated ${new Date().toLocaleString()}`,
+          10,
+          h - 9,
+        );
+      },
     });
     doc.save(`Northfield-Attendance-${filters.from}-${filters.to}.pdf`);
   }
@@ -3483,7 +3800,7 @@ function AttendanceAdmin() {
                   committedHours: 48,
                   shiftStart: "09:00",
                   shiftEnd: "18:00",
-                  breakMinutes: 60,
+                  breakMinutes: 0,
                   graceMinutes: 10,
                   workDays: "1,2,3,4,5,6",
                   overtimeRequiresApproval: true,
@@ -3644,7 +3961,7 @@ function AttendanceAdmin() {
                     committedHours: u.committed_hours ?? 48,
                     shiftStart: String(u.shift_start || "09:00").slice(0, 5),
                     shiftEnd: String(u.shift_end || "18:00").slice(0, 5),
-                    breakMinutes: u.break_minutes ?? 60,
+                    breakMinutes: 0,
                     graceMinutes: u.grace_minutes ?? 10,
                     workDays: u.work_days || "1,2,3,4,5,6",
                     overtimeRequiresApproval:
@@ -3656,6 +3973,60 @@ function AttendanceAdmin() {
               </button>
             </article>
           ))}
+        </div>
+      </section>
+      <section className="card managerLeaveBoard">
+        <div className="cardHeader">
+          <div>
+            <div className="sectionTitle">Leave requests</div>
+            <div className="sectionSub">
+              Approve or reject staff requests from one place.
+            </div>
+          </div>
+          <span className="softBadge">
+            {(d.leaves || []).filter((x) => x.status === "PENDING").length}{" "}
+            PENDING
+          </span>
+        </div>
+        <div className="leaveRequestList">
+          {(d.leaves || []).length ? (
+            d.leaves.map((item) => (
+              <article key={item.id}>
+                <div className="leaveAvatar">
+                  {String(item.display_name || "S")[0]}
+                </div>
+                <div>
+                  <b>{item.display_name}</b>
+                  <span>
+                    {item.leave_type} · {String(item.date_from).slice(0, 10)} →{" "}
+                    {String(item.date_to).slice(0, 10)}
+                  </span>
+                  <small>{item.note || "No note provided"}</small>
+                </div>
+                <em
+                  className={`leaveStatus ${String(item.status).toLowerCase()}`}
+                >
+                  {item.status}
+                </em>
+                {item.status === "PENDING" && (
+                  <div className="leaveDecision">
+                    <button onClick={() => decideLeave(item.id, "REJECTED")}>
+                      REJECT
+                    </button>
+                    <button onClick={() => decideLeave(item.id, "APPROVED")}>
+                      APPROVE
+                    </button>
+                  </div>
+                )}
+              </article>
+            ))
+          ) : (
+            <div className="attendanceEmpty">
+              <Plane />
+              <b>No leave requests</b>
+              <span>New requests will appear here.</span>
+            </div>
+          )}
         </div>
       </section>
       <section className="card attendanceReports">
@@ -3962,16 +4333,6 @@ function AttendanceAdmin() {
                   />
                 </div>
                 <div className="field">
-                  <label>Break Minutes</label>
-                  <input
-                    type="number"
-                    value={create.breakMinutes}
-                    onChange={(e) =>
-                      setCreate({ ...create, breakMinutes: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="field">
                   <label>Grace Minutes</label>
                   <input
                     type="number"
@@ -4079,16 +4440,6 @@ function AttendanceAdmin() {
                   />
                 </div>
                 <div className="field">
-                  <label>Break Minutes</label>
-                  <input
-                    type="number"
-                    value={edit.breakMinutes}
-                    onChange={(e) =>
-                      setEdit({ ...edit, breakMinutes: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="field">
                   <label>Grace Minutes</label>
                   <input
                     type="number"
@@ -4130,6 +4481,36 @@ function AttendanceAdmin() {
         </div>
       )}
     </>
+  );
+}
+
+function StaffWorkspace({ user }) {
+  const canManage = ["Super Admin", "Manager"].includes(user.role),
+    [tab, setTab] = useState(canManage ? "team" : "mine");
+  return (
+    <div className="staffWorkspace">
+      {canManage && (
+        <div className="staffWorkspaceTabs">
+          <button
+            className={tab === "team" ? "active" : ""}
+            onClick={() => setTab("team")}
+          >
+            <Users /> TEAM CONTROL
+          </button>
+          <button
+            className={tab === "mine" ? "active" : ""}
+            onClick={() => setTab("mine")}
+          >
+            <Clock3 /> MY TIME
+          </button>
+        </div>
+      )}
+      {tab === "team" && canManage ? (
+        <AttendanceAdmin />
+      ) : (
+        <EmployeePortal user={user} />
+      )}
+    </div>
   );
 }
 
@@ -4672,13 +5053,12 @@ function ControlLuxury() {
 }
 const ITEMS = [
   ["Dashboard", LayoutDashboard, "dashboard"],
+  ["Staff", Users, "attendance"],
   ["New Transaction", PlusCircle, "transactions"],
   ["Money Movements", ArrowLeftRight, "movements"],
   ["Daily Closing", CheckCircle2, "closing"],
   ["Emirates Islamic", Landmark, "bank"],
   ["Iran / Dubai", Globe2, "transfer"],
-  ["My Attendance", Clock3, "attendance"],
-  ["Staff Attendance", QrCode, "attendance_admin"],
   ["Reports", FileText, "reports"],
   ["Directory", Users, "directory"],
   ["Control Center", Settings, "control"],
@@ -4686,7 +5066,7 @@ const ITEMS = [
 function MobileBottomNav({ page, setPage, setOpen, items }) {
   const labels = {
       Dashboard: "Home",
-      "My Attendance": "My Time",
+      Staff: "Staff",
       "New Transaction": "Add",
       "Money Movements": "Activity",
       Reports: "Reports",
@@ -4757,18 +5137,16 @@ export default function NorthfieldApp({ user }) {
     ? ITEMS.filter(([, , key]) =>
         key === "control"
           ? user.role === "Super Admin"
-          : key === "attendance_admin"
-            ? ["Super Admin", "Manager"].includes(user.role)
-            : key === "attendance"
-              ? access.attendance
-              : access[key],
+          : key === "attendance"
+            ? access.attendance
+            : access[key],
       )
     : [];
   useEffect(() => {
     if (allowed.length && !allowed.some((x) => x[0] === page))
       setPage(
-        user.role === "Staff" && allowed.some((x) => x[0] === "My Attendance")
-          ? "My Attendance"
+        user.role === "Staff" && allowed.some((x) => x[0] === "Staff")
+          ? "Staff"
           : allowed[0][0],
       );
   }, [access, page]);
@@ -4785,10 +5163,8 @@ export default function NorthfieldApp({ user }) {
   let body =
     page === "Dashboard" ? (
       <Dashboard user={user} />
-    ) : page === "My Attendance" ? (
-      <EmployeePortal user={user} />
-    ) : page === "Staff Attendance" ? (
-      <AttendanceAdmin />
+    ) : page === "Staff" ? (
+      <StaffWorkspace user={user} />
     ) : page === "New Transaction" ? (
       <TransactionPage />
     ) : page === "Money Movements" ? (

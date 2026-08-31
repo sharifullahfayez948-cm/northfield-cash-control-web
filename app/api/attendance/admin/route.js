@@ -33,29 +33,34 @@ export async function GET(req) {
         new Date().toISOString().slice(0, 8) + "01",
       to = url.searchParams.get("to") || new Date().toISOString().slice(0, 10),
       selected = Number(url.searchParams.get("userId") || 0);
-    const [staff, today, records, attempts, site, summary] = await Promise.all([
-      query(
-        `select u.id,u.display_name,u.username,u.email,u.active,u.role,p.employee_code,p.job_title,p.phone,p.committed_hours,p.shift_start,p.shift_end,p.break_minutes,p.grace_minutes,p.work_days,p.overtime_requires_approval from users u left join employee_profiles p on p.user_id=u.id where u.role<>'Super Admin' order by u.display_name`,
-      ),
-      query(
-        `select u.id,u.display_name,min(a.event_time) filter(where a.event_type='CLOCK_IN') clock_in,max(a.event_time) filter(where a.event_type='CLOCK_OUT') clock_out,max(a.event_type) last_event from users u left join attendance_events a on a.user_id=u.id and a.work_date=(now() at time zone 'Asia/Dubai')::date where u.role<>'Super Admin' group by u.id,u.display_name order by u.display_name`,
-      ),
-      query(
-        `select a.id,a.work_date,u.display_name,u.username,a.event_type,a.event_time,a.distance_meters,a.outside_geofence,a.latitude,a.longitude,a.location_accuracy from attendance_events a join users u on u.id=a.user_id where a.work_date between $1 and $2 and ($3::bigint=0 or a.user_id=$3) order by a.work_date desc,a.event_time desc`,
-        [from, to, selected],
-      ),
-      query(
-        `select x.id,x.attempted_at,u.display_name,x.event_type,x.distance_meters,x.accepted,x.reason,x.latitude,x.longitude,x.location_accuracy from attendance_attempts x left join users u on u.id=x.user_id where (x.attempted_at at time zone 'Asia/Dubai')::date between $1 and $2 and ($3::bigint=0 or x.user_id=$3) order by x.attempted_at desc limit 300`,
-        [from, to, selected],
-      ),
-      query(
-        "select site_name,latitude,longitude,radius_meters,block_outside from attendance_site where id=1",
-      ),
-      query(
-        `with daily as (select user_id,work_date,min(event_time) filter(where event_type='CLOCK_IN') clock_in,max(event_time) filter(where event_type='CLOCK_OUT') clock_out from attendance_events where work_date between $1 and $2 and ($3::bigint=0 or user_id=$3) group by user_id,work_date) select d.work_date,u.display_name,d.clock_in,d.clock_out,case when d.clock_out is not null then greatest(0,floor(extract(epoch from(d.clock_out-d.clock_in))/60)-coalesce(p.break_minutes,0))::int end worked_minutes,greatest(0,floor(extract(epoch from((d.clock_in at time zone 'Asia/Dubai')-(d.work_date+coalesce(p.shift_start,'09:00'::time))))/60)-coalesce(p.grace_minutes,10))::int late_minutes,case when d.clock_out is not null then greatest(0,(floor(extract(epoch from(d.clock_out-d.clock_in))/60)-coalesce(p.break_minutes,0))-floor(extract(epoch from(coalesce(p.shift_end,'18:00'::time)-coalesce(p.shift_start,'09:00'::time)))/60))::int end overtime_minutes from daily d join users u on u.id=d.user_id left join employee_profiles p on p.user_id=d.user_id order by d.work_date desc,u.display_name`,
-        [from, to, selected],
-      ),
-    ]);
+    const [staff, today, records, attempts, site, summary, leaves] =
+      await Promise.all([
+        query(
+          `select u.id,u.display_name,u.username,u.email,u.active,u.role,p.employee_code,p.job_title,p.phone,p.committed_hours,p.shift_start,p.shift_end,p.break_minutes,p.grace_minutes,p.work_days,p.overtime_requires_approval from users u left join employee_profiles p on p.user_id=u.id where u.role<>'Super Admin' order by u.display_name`,
+        ),
+        query(
+          `select u.id,u.display_name,min(a.event_time) filter(where a.event_type='CLOCK_IN') clock_in,max(a.event_time) filter(where a.event_type='CLOCK_OUT') clock_out,max(a.event_type) last_event from users u left join attendance_events a on a.user_id=u.id and a.work_date=(now() at time zone 'Asia/Dubai')::date where u.role<>'Super Admin' group by u.id,u.display_name order by u.display_name`,
+        ),
+        query(
+          `select a.id,a.work_date,u.display_name,u.username,a.event_type,a.event_time,a.distance_meters,a.outside_geofence,a.latitude,a.longitude,a.location_accuracy from attendance_events a join users u on u.id=a.user_id where a.work_date between $1 and $2 and ($3::bigint=0 or a.user_id=$3) order by a.work_date desc,a.event_time desc`,
+          [from, to, selected],
+        ),
+        query(
+          `select x.id,x.attempted_at,u.display_name,x.event_type,x.distance_meters,x.accepted,x.reason,x.latitude,x.longitude,x.location_accuracy from attendance_attempts x left join users u on u.id=x.user_id where (x.attempted_at at time zone 'Asia/Dubai')::date between $1 and $2 and ($3::bigint=0 or x.user_id=$3) order by x.attempted_at desc limit 300`,
+          [from, to, selected],
+        ),
+        query(
+          "select site_name,latitude,longitude,radius_meters,block_outside from attendance_site where id=1",
+        ),
+        query(
+          `with daily as (select user_id,work_date,min(event_time) filter(where event_type='CLOCK_IN') clock_in,max(event_time) filter(where event_type='CLOCK_OUT') clock_out from attendance_events where work_date between $1 and $2 and ($3::bigint=0 or user_id=$3) group by user_id,work_date) select d.work_date,u.display_name,d.clock_in,d.clock_out,case when d.clock_out is not null then greatest(0,floor(extract(epoch from(d.clock_out-d.clock_in))/60))::int end worked_minutes,greatest(0,floor(extract(epoch from((d.clock_in at time zone 'Asia/Dubai')-(d.work_date+coalesce(p.shift_start,'09:00'::time))))/60)-coalesce(p.grace_minutes,10))::int late_minutes,case when d.clock_out is not null then greatest(0,floor(extract(epoch from(d.clock_out-d.clock_in))/60)-floor(extract(epoch from(coalesce(p.shift_end,'18:00'::time)-coalesce(p.shift_start,'09:00'::time)))/60))::int end overtime_minutes from daily d join users u on u.id=d.user_id left join employee_profiles p on p.user_id=d.user_id order by d.work_date desc,u.display_name`,
+          [from, to, selected],
+        ),
+        query(
+          `select l.id,l.leave_type,l.date_from,l.date_to,l.note,l.status,l.manager_note,l.created_at,u.display_name from attendance_leave_requests l join users u on u.id=l.user_id where ($1::bigint=0 or l.user_id=$1) order by case when l.status='PENDING' then 0 else 1 end,l.created_at desc limit 200`,
+          [selected],
+        ),
+      ]);
     return ok({
       staff: staff.rows,
       today: today.rows,
@@ -63,6 +68,7 @@ export async function GET(req) {
       attempts: attempts.rows,
       site: site.rows[0] || null,
       summary: summary.rows,
+      leaves: leaves.rows,
       from,
       to,
       selected,
@@ -84,6 +90,21 @@ export async function POST(req) {
     await ensureAttendanceSchema();
     await ensurePermissionsSchema();
     const b = await req.json();
+    if (b.kind === "leave_decision") {
+      const status = String(b.status || "").toUpperCase();
+      if (!["APPROVED", "REJECTED"].includes(status))
+        throw new Error("Leave decision must be approved or rejected.");
+      await query(
+        `update attendance_leave_requests set status=$1,manager_note=$2,decided_by=$3,decided_at=now() where id=$4`,
+        [
+          status,
+          String(b.managerNote || "").slice(0, 500),
+          actor.id,
+          Number(b.leaveId),
+        ],
+      );
+      return ok({ ok: true });
+    }
     if (b.kind === "site") {
       const latitude = Number(b.latitude),
         longitude = Number(b.longitude),
