@@ -1628,6 +1628,7 @@ tbody tr:hover {
 .scanSheetShade {
   align-items: flex-end !important;
   padding: 0 !important;
+  z-index: 9999 !important;
 }
 .scanActionSheet {
   width: min(620px, 100%);
@@ -1778,8 +1779,12 @@ html[data-theme="dark"] .scanChoice.primary {
 }
 @media (max-width: 650px) {
   .scanActionSheet {
-    padding: 8px 18px calc(19px + env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 72px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 8px 18px calc(112px + env(safe-area-inset-bottom));
     border-radius: 26px 26px 0 0;
+    scroll-padding-bottom: 120px;
   }
   .scanActionSheet .modalHead h3 {
     font-size: 22px;

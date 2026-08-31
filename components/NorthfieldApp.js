@@ -3546,26 +3546,17 @@ function EmployeePortal({ user }) {
                 <X />
               </button>
             </div>
-            <button className="scanChoice" onClick={camera} disabled={busy}>
-              <span>
-                <Fingerprint />
-              </span>
-              <div>
-                <b>{busy ? "VERIFYING DEVICE…" : "FACE ID / DEVICE PIN"}</b>
-                <small>Required before the camera opens</small>
-              </div>
-            </button>
             <button
               className="scanChoice primary"
               onClick={camera}
               disabled={busy}
             >
-              <span>
-                <QrCode />
-              </span>
+              <span>{busy ? <Fingerprint /> : <QrCode />}</span>
               <div>
-                <b>SCAN QR CODE</b>
-                <small>Fast automatic workplace check</small>
+                <b>{busy ? "VERIFYING FACE ID…" : "VERIFY & SCAN QR CODE"}</b>
+                <small>
+                  Face ID or device PIN opens first, then the camera
+                </small>
               </div>
             </button>
           </div>
@@ -5377,12 +5368,12 @@ function ControlLuxury() {
 }
 const ITEMS = [
   ["Dashboard", LayoutDashboard, "dashboard"],
-  ["Staff", Users, "attendance"],
   ["New Transaction", PlusCircle, "transactions"],
   ["Money Movements", ArrowLeftRight, "movements"],
   ["Daily Closing", CheckCircle2, "closing"],
   ["Emirates Islamic", Landmark, "bank"],
   ["Iran / Dubai", Globe2, "transfer"],
+  ["Staff", Users, "attendance"],
   ["Reports", FileText, "reports"],
   ["Directory", Users, "directory"],
   ["Control Center", Settings, "control"],
