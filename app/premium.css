@@ -1624,6 +1624,190 @@ tbody tr:hover {
   }
 }
 
+/* Secure staff scan sheet and manager controls */
+.scanSheetShade {
+  align-items: flex-end !important;
+  padding: 0 !important;
+}
+.scanActionSheet {
+  width: min(620px, 100%);
+  padding: 9px 24px calc(24px + env(safe-area-inset-bottom));
+  border: 1px solid rgba(117, 160, 177, 0.28);
+  border-radius: 30px 30px 0 0;
+  background: linear-gradient(180deg, #fdfefe, #eff6f8);
+  box-shadow: 0 -28px 80px rgba(0, 22, 35, 0.35);
+  animation: scanSheetUp 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes scanSheetUp {
+  from {
+    transform: translateY(105%);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.scanSheetHandle {
+  width: 48px;
+  height: 5px;
+  margin: 1px auto 18px;
+  border-radius: 9px;
+  background: #cad9df;
+}
+.scanActionSheet .modalHead {
+  margin-bottom: 17px;
+}
+.scanActionSheet .modalHead h3 {
+  font-size: 25px;
+}
+.scanChoice {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 78px;
+  margin-top: 10px;
+  padding: 12px 16px;
+  border: 1px solid #d7e4e9;
+  border-radius: 18px;
+  background: #f8fbfc;
+  color: #173b4d;
+  text-align: left;
+  cursor: pointer;
+}
+.scanChoice > span {
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  margin-right: 14px;
+  border-radius: 16px;
+  background: #d9f0f3;
+  color: #096a81;
+}
+.scanChoice > span svg {
+  width: 23px;
+}
+.scanChoice > div {
+  display: grid;
+  gap: 4px;
+}
+.scanChoice b {
+  font-size: 14px;
+}
+.scanChoice small {
+  font-size: 11px;
+  color: #718893;
+}
+.scanChoice.primary {
+  border-color: #edb743;
+  background: linear-gradient(135deg, #ffd87b, #edae35);
+  box-shadow: 0 13px 26px rgba(218, 153, 31, 0.2);
+}
+.scanChoice.primary > span {
+  background: rgba(255, 255, 255, 0.58);
+  color: #173c4f;
+}
+.scanBottomSheet {
+  overflow: hidden;
+}
+.scanBottomSheet video {
+  border-radius: 18px;
+  background: #02090d;
+}
+.staffAccountActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  grid-column: 1/-1;
+}
+.staffAccountActions button,
+.recordActions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 1px solid #d7e4e9;
+  border-radius: 10px;
+  background: #f7fafb;
+  color: #456575;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.staffAccountActions svg,
+.recordActions svg {
+  width: 13px;
+}
+.staffAccountActions .disable {
+  color: #9a6a12;
+  background: #fff8e8;
+}
+.staffAccountActions .enable {
+  color: #107b60;
+  background: #e8f9f3;
+}
+.staffAccountActions .delete,
+.recordActions button:last-child {
+  color: #a54743;
+  background: #fff0ef;
+}
+.recordActions {
+  display: flex;
+  gap: 6px;
+}
+.recordActions button {
+  padding: 0 10px;
+}
+.eventEditorModal {
+  max-width: 620px;
+}
+html[data-theme="dark"] .scanActionSheet {
+  background: linear-gradient(180deg, #102a38, #081d29);
+  color: #eef8fb;
+}
+html[data-theme="dark"] .scanChoice {
+  border-color: #294b5b;
+  background: #102f3d;
+  color: #eef8fb;
+}
+html[data-theme="dark"] .scanChoice.primary {
+  background: linear-gradient(135deg, #f5c75e, #c88925);
+  color: #09283a;
+}
+@media (max-width: 650px) {
+  .scanActionSheet {
+    padding: 8px 18px calc(19px + env(safe-area-inset-bottom));
+    border-radius: 26px 26px 0 0;
+  }
+  .scanActionSheet .modalHead h3 {
+    font-size: 22px;
+  }
+  .scanChoice {
+    min-height: 72px;
+  }
+  .staffAccountActions {
+    grid-template-columns: 1fr;
+  }
+  .recordActions {
+    flex-direction: column;
+  }
+  .recordActions button {
+    white-space: nowrap;
+  }
+  .scanBottomSheet {
+    position: fixed !important;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100% !important;
+    max-height: 88dvh;
+    border-radius: 26px 26px 0 0 !important;
+    animation: scanSheetUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
 /* App shell, theme system and transaction intelligence */
 html {
   color-scheme: light;

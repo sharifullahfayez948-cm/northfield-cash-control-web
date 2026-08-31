@@ -42,6 +42,9 @@ import {
   Timer,
   Target,
   Plane,
+  Fingerprint,
+  Trash2,
+  UserX,
 } from "lucide-react";
 import FayezSignature from "@/components/FayezSignature";
 import * as XLSX from "xlsx";
@@ -3007,11 +3010,24 @@ const attendanceTime = (x) =>
     ? new Date(x).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "—";
 
+const bytesToBase64Url = (bytes) =>
+  btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+const base64UrlToBytes = (value) => {
+  const base64 = String(value).replaceAll("-", "+").replaceAll("_", "/");
+  return Uint8Array.from(
+    atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")),
+    (c) => c.charCodeAt(0),
+  );
+};
+
 function EmployeePortal({ user }) {
   const [d, setD] = useState(),
-    [token, setToken] = useState(""),
     [busy, setBusy] = useState(false),
     [scan, setScan] = useState(false),
+    [scanMenu, setScanMenu] = useState(false),
     [msg, setMsg] = useState(""),
     [now, setNow] = useState(Date.now()),
     [leave, setLeave] = useState(null);
@@ -3028,7 +3044,7 @@ function EmployeePortal({ user }) {
     return () => clearInterval(timer);
   }, []);
   async function submit(raw, eventType) {
-    const value = String(raw || token)
+    const value = String(raw || "")
       .trim()
       .replace("northfield-attendance:", "");
     if (!value) {
@@ -3056,7 +3072,6 @@ function EmployeePortal({ user }) {
           deviceLabel: `${navigator.platform || "Device"} · ${navigator.userAgent.includes("Mobile") ? "Mobile" : "Desktop"}`,
         }),
       });
-      setToken("");
       window.__northfieldQrControls?.stop?.();
       setScan(false);
       setMsg(
@@ -3073,9 +3088,73 @@ function EmployeePortal({ user }) {
       setBusy(false);
     }
   }
+  async function verifyDevice() {
+    if (!window.PublicKeyCredential || !navigator.credentials)
+      throw new Error(
+        "Face ID or device PIN is not supported in this browser.",
+      );
+    const storageKey = `northfield-device-passkey-${user.id}`,
+      saved = localStorage.getItem(storageKey),
+      challenge = crypto.getRandomValues(new Uint8Array(32));
+    if (!saved) {
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: "Northfield Cash Control" },
+          user: {
+            id: new TextEncoder().encode(`northfield-${user.id}`),
+            name: user.username || user.name,
+            displayName: user.name,
+          },
+          pubKeyCredParams: [
+            { type: "public-key", alg: -7 },
+            { type: "public-key", alg: -257 },
+          ],
+          timeout: 60000,
+          authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            residentKey: "preferred",
+            userVerification: "required",
+          },
+          attestation: "none",
+        },
+      });
+      if (!credential) throw new Error("Device verification was cancelled.");
+      localStorage.setItem(storageKey, bytesToBase64Url(credential.rawId));
+      return;
+    }
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials: [
+          {
+            type: "public-key",
+            id: base64UrlToBytes(saved),
+            transports: ["internal"],
+          },
+        ],
+        userVerification: "required",
+        timeout: 60000,
+      },
+    });
+    if (!assertion) throw new Error("Device verification was cancelled.");
+  }
   async function camera() {
-    setScan(true);
+    setBusy(true);
     setMsg("");
+    try {
+      await verifyDevice();
+    } catch (e) {
+      setBusy(false);
+      setMsg(
+        e.name === "NotAllowedError"
+          ? "Face ID or device PIN was cancelled."
+          : e.message,
+      );
+      return;
+    }
+    setScanMenu(false);
+    setScan(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 80));
       const { BrowserQRCodeReader } = await import("@zxing/browser");
@@ -3092,9 +3171,9 @@ function EmployeePortal({ user }) {
         },
       );
     } catch (e) {
-      setMsg(
-        "Camera could not start. Allow camera access or paste the QR code below.",
-      );
+      setMsg("Camera could not start. Allow camera access and try again.");
+    } finally {
+      setBusy(false);
     }
   }
   function closeScanner() {
@@ -3357,23 +3436,17 @@ function EmployeePortal({ user }) {
           <small>SECURE ATTENDANCE</small>
           <h2>{attendanceLabel(d.nextEvent)}</h2>
           <p>
-            Scan the live QR displayed at the workplace. Each QR expires
-            automatically.
+            Tap below, verify with Face ID or device PIN, then scan the printed
+            workplace QR.
           </p>
-          <button className="attendanceScan" onClick={camera} disabled={busy}>
+          <button
+            className="attendanceScan"
+            onClick={() => setScanMenu(true)}
+            disabled={busy}
+          >
             <QrCode />
-            {busy ? "RECORDING…" : "SCAN OFFICE QR"}
+            {busy ? "VERIFYING…" : attendanceLabel(d.nextEvent).toUpperCase()}
           </button>
-          <div className="manualScan">
-            <input
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Paste QR code if camera is unavailable"
-            />
-            <button onClick={() => submit(token, d.nextEvent)} disabled={busy}>
-              CONFIRM
-            </button>
-          </div>
           {msg && (
             <div
               className={`notice ${msg.includes("successfully") ? "" : "error"}`}
@@ -3438,7 +3511,7 @@ function EmployeePortal({ user }) {
       </section>
       {scan && (
         <div className="modalShade">
-          <div className="luxModal scannerModal">
+          <div className="luxModal scannerModal scanBottomSheet">
             <div className="modalHead">
               <div>
                 <small>QR SCANNER</small>
@@ -3450,9 +3523,51 @@ function EmployeePortal({ user }) {
             </div>
             <video id="attendance-camera" playsInline muted />
             <p>
-              If automatic scanning is unavailable in this browser, close this
-              window and paste the code.
+              Hold the printed workplace QR inside the frame. Scanning is
+              automatic.
             </p>
+          </div>
+        </div>
+      )}
+      {scanMenu && (
+        <div
+          className="modalShade scanSheetShade"
+          onClick={() => setScanMenu(false)}
+        >
+          <div className="scanActionSheet" onClick={(e) => e.stopPropagation()}>
+            <div className="scanSheetHandle" />
+            <div className="modalHead">
+              <div>
+                <small>SECURE ATTENDANCE</small>
+                <h3>{attendanceLabel(d.nextEvent)}</h3>
+                <p>Verify your identity, then scan the workplace QR.</p>
+              </div>
+              <button onClick={() => setScanMenu(false)}>
+                <X />
+              </button>
+            </div>
+            <button className="scanChoice" onClick={camera} disabled={busy}>
+              <span>
+                <Fingerprint />
+              </span>
+              <div>
+                <b>{busy ? "VERIFYING DEVICE…" : "FACE ID / DEVICE PIN"}</b>
+                <small>Required before the camera opens</small>
+              </div>
+            </button>
+            <button
+              className="scanChoice primary"
+              onClick={camera}
+              disabled={busy}
+            >
+              <span>
+                <QrCode />
+              </span>
+              <div>
+                <b>SCAN QR CODE</b>
+                <small>Fast automatic workplace check</small>
+              </div>
+            </button>
           </div>
         </div>
       )}
@@ -3539,6 +3654,7 @@ function AttendanceAdmin() {
   const [d, setD] = useState(),
     [qr, setQr] = useState(),
     [edit, setEdit] = useState(null),
+    [eventEdit, setEventEdit] = useState(null),
     [create, setCreate] = useState(null),
     [siteEdit, setSiteEdit] = useState(null),
     [filters, setFilters] = useState({
@@ -3610,6 +3726,57 @@ function AttendanceAdmin() {
     setMsg(`Leave request ${status.toLowerCase()}.`);
     load();
   }
+  async function staffAction(userId, kind, active) {
+    const destructive = kind === "staff_delete";
+    if (
+      destructive &&
+      !window.confirm(
+        "Delete this staff account and all attendance records permanently?",
+      )
+    )
+      return;
+    await api("/api/attendance/admin", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind, userId, active }),
+    });
+    setMsg(
+      destructive
+        ? "Staff account deleted."
+        : active
+          ? "Staff access enabled."
+          : "Staff access disabled.",
+    );
+    load();
+  }
+  async function saveEvent(e) {
+    e.preventDefault();
+    await api("/api/attendance/admin", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "event_update",
+        eventId: eventEdit.id,
+        eventType: eventEdit.eventType,
+        eventTime: new Date(eventEdit.eventTime).toISOString(),
+        workDate: eventEdit.eventTime.slice(0, 10),
+        note: eventEdit.note,
+      }),
+    });
+    setEventEdit(null);
+    setMsg("Attendance time corrected with manager audit note.");
+    load();
+  }
+  async function deleteEvent(eventId) {
+    if (!window.confirm("Delete this attendance scan permanently?")) return;
+    await api("/api/attendance/admin", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "event_delete", eventId }),
+    });
+    setMsg("Attendance scan deleted.");
+    load();
+  }
   function useCurrentLocation() {
     navigator.geolocation.getCurrentPosition(
       (p) =>
@@ -3672,7 +3839,7 @@ function AttendanceAdmin() {
     doc.setFillColor(6, 35, 52);
     doc.roundedRect(8, 8, pageWidth - 16, 35, 4, 4, "F");
     try {
-      const logo = await imageData("/northfield_logo_clean.png");
+      const logo = await imageData("/northfield-logo.png");
       doc.addImage(logo, "PNG", 14, 13, 29, 24);
     } catch {}
     doc.setTextColor(255, 255, 255);
@@ -3778,6 +3945,51 @@ function AttendanceAdmin() {
         );
       },
     });
+    const detailsY = Math.min((doc.lastAutoTable?.finalY || 75) + 10, 138),
+      reportHeight = 34;
+    doc.setFillColor(7, 37, 54);
+    doc.roundedRect(9, detailsY, pageWidth - 18, reportHeight, 4, 4, "F");
+    doc.setFillColor(25, 171, 139);
+    doc.roundedRect(9, detailsY, 3, reportHeight, 1, 1, "F");
+    doc.setTextColor(238, 249, 251);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("ATTENDANCE CONTROL SUMMARY", 18, detailsY + 9);
+    doc.setTextColor(154, 187, 199);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(
+      `Report scope: ${filters.userId === "0" ? "All employees" : d.staff.find((x) => String(x.id) === String(filters.userId))?.display_name || "Selected employee"}`,
+      18,
+      detailsY + 17,
+    );
+    doc.text(
+      `Workplace: ${siteEdit?.siteName || "Northfield Clinic"}`,
+      18,
+      detailsY + 23,
+    );
+    doc.text(
+      "Calculation: Actual elapsed time from Clock In to Clock Out · Dubai local time",
+      18,
+      detailsY + 29,
+    );
+    const signatureX = pageWidth - 90;
+    doc.setDrawColor(89, 128, 143);
+    doc.line(signatureX, detailsY + 22, signatureX + 31, detailsY + 22);
+    doc.line(signatureX + 39, detailsY + 22, signatureX + 70, detailsY + 22);
+    doc.setTextColor(164, 193, 202);
+    doc.setFontSize(7);
+    doc.text("PREPARED BY", signatureX, detailsY + 28);
+    doc.text("MANAGER APPROVAL", signatureX + 39, detailsY + 28);
+    doc.setTextColor(8, 53, 71);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text(
+      "CONFIDENTIAL · AUTHORIZED STAFF USE ONLY",
+      pageWidth / 2,
+      detailsY + 43,
+      { align: "center" },
+    );
     doc.save(`Northfield-Attendance-${filters.from}-${filters.to}.pdf`);
   }
   if (!d) return <Loading />;
@@ -3973,6 +4185,24 @@ function AttendanceAdmin() {
               >
                 <Pencil /> MANAGE SHIFT
               </button>
+              {u.role === "Staff" && (
+                <div className="staffAccountActions">
+                  <button
+                    className={u.active ? "disable" : "enable"}
+                    onClick={() => staffAction(u.id, "staff_toggle", !u.active)}
+                  >
+                    <UserX />
+                    {u.active ? "DISABLE ACCESS" : "ENABLE ACCESS"}
+                  </button>
+                  <button
+                    className="delete"
+                    onClick={() => staffAction(u.id, "staff_delete")}
+                  >
+                    <Trash2 />
+                    DELETE STAFF
+                  </button>
+                </div>
+              )}
             </article>
           ))}
         </div>
@@ -4125,6 +4355,7 @@ function AttendanceAdmin() {
                   <th>Employee</th>
                   <th>Event</th>
                   <th>Distance</th>
+                  <th>Actions</th>
                   <th>Map</th>
                 </tr>
               </thead>
@@ -4138,6 +4369,29 @@ function AttendanceAdmin() {
                       {Number(x.distance_meters || 0) >= 1000
                         ? `${(Number(x.distance_meters) / 1000).toFixed(2)} km`
                         : `${Number(x.distance_meters || 0).toFixed(0)} m`}
+                    </td>
+                    <td>
+                      <div className="recordActions">
+                        <button
+                          onClick={() => {
+                            const local = new Date(x.event_time),
+                              offset = local.getTimezoneOffset() * 60000;
+                            setEventEdit({
+                              id: x.id,
+                              eventType: x.event_type,
+                              eventTime: new Date(local.getTime() - offset)
+                                .toISOString()
+                                .slice(0, 16),
+                              note: "Manager correction",
+                            });
+                          }}
+                        >
+                          <Pencil /> EDIT
+                        </button>
+                        <button onClick={() => deleteEvent(x.id)}>
+                          <Trash2 /> DELETE
+                        </button>
+                      </div>
                     </td>
                     <td>
                       {x.latitude ? (
@@ -4220,6 +4474,74 @@ function AttendanceAdmin() {
           </>
         )}
       </section>
+      {eventEdit && (
+        <div className="modalShade">
+          <div className="luxModal eventEditorModal">
+            <form onSubmit={saveEvent}>
+              <div className="modalHead">
+                <div>
+                  <small>MANAGER CORRECTION</small>
+                  <h3>Edit attendance scan</h3>
+                  <p>
+                    The corrected time will be used in staff totals and reports.
+                  </p>
+                </div>
+                <button type="button" onClick={() => setEventEdit(null)}>
+                  <X />
+                </button>
+              </div>
+              <div className="formGrid">
+                <div className="field">
+                  <label>Event</label>
+                  <select
+                    value={eventEdit.eventType}
+                    onChange={(e) =>
+                      setEventEdit({ ...eventEdit, eventType: e.target.value })
+                    }
+                  >
+                    <option value="CLOCK_IN">Clock In</option>
+                    <option value="CLOCK_OUT">Clock Out</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Date & time</label>
+                  <input
+                    required
+                    type="datetime-local"
+                    value={eventEdit.eventTime}
+                    onChange={(e) =>
+                      setEventEdit({ ...eventEdit, eventTime: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="field">
+                <label>Correction note</label>
+                <input
+                  required
+                  value={eventEdit.note}
+                  onChange={(e) =>
+                    setEventEdit({ ...eventEdit, note: e.target.value })
+                  }
+                />
+              </div>
+              <div className="modalActions">
+                <button
+                  type="button"
+                  className="btn btnSoft"
+                  onClick={() => setEventEdit(null)}
+                >
+                  CANCEL
+                </button>
+                <button className="btn btnPrimary">
+                  <Save />
+                  SAVE CORRECTION
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       {create && (
         <div className="modalShade">
           <div className="luxModal staffCreator">

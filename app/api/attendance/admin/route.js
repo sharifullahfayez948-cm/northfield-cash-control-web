@@ -90,6 +90,52 @@ export async function POST(req) {
     await ensureAttendanceSchema();
     await ensurePermissionsSchema();
     const b = await req.json();
+    if (b.kind === "event_update") {
+      const eventId = Number(b.eventId),
+        eventType = String(b.eventType || "");
+      if (!eventId || !["CLOCK_IN", "CLOCK_OUT"].includes(eventType))
+        throw new Error("Valid attendance event is required.");
+      await query(
+        `update attendance_events set event_type=$1,event_time=$2::timestamptz,work_date=$3::date,note=$4 where id=$5 and user_id in(select id from users where role<>'Super Admin')`,
+        [
+          eventType,
+          b.eventTime,
+          b.workDate,
+          String(b.note || "Manager correction").slice(0, 300),
+          eventId,
+        ],
+      );
+      return ok({ ok: true });
+    }
+    if (b.kind === "event_delete") {
+      await query(
+        `delete from attendance_events where id=$1 and user_id in(select id from users where role<>'Super Admin')`,
+        [Number(b.eventId)],
+      );
+      return ok({ ok: true });
+    }
+    if (b.kind === "staff_toggle") {
+      const target = await query(
+        `select id,role,active from users where id=$1`,
+        [Number(b.userId)],
+      );
+      if (!target.rows[0] || target.rows[0].role !== "Staff")
+        throw new Error("Only staff accounts can be disabled here.");
+      await query(`update users set active=$1,updated_at=now() where id=$2`, [
+        b.active === true,
+        Number(b.userId),
+      ]);
+      return ok({ ok: true });
+    }
+    if (b.kind === "staff_delete") {
+      const target = await query(`select id,role from users where id=$1`, [
+        Number(b.userId),
+      ]);
+      if (!target.rows[0] || target.rows[0].role !== "Staff")
+        throw new Error("Only staff accounts can be deleted here.");
+      await query(`delete from users where id=$1`, [Number(b.userId)]);
+      return ok({ ok: true });
+    }
     if (b.kind === "leave_decision") {
       const status = String(b.status || "").toUpperCase();
       if (!["APPROVED", "REJECTED"].includes(status))
