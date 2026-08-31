@@ -3266,7 +3266,7 @@ function EmployeePortal({ user }) {
         </div>
         <div className="staffTrendChart">
           {(d.trend || []).map((x) => (
-            <div key={x.month}>
+            <div key={x.month_start}>
               <span
                 style={{
                   height: `${Math.max(4, (Number(x.minutes || 0) / trendMax) * 100)}%`,
@@ -3275,7 +3275,9 @@ function EmployeePortal({ user }) {
                 <i>{fmtMinutes(x.minutes)}</i>
               </span>
               <small>
-                {new Date(x.month).toLocaleDateString("en", { month: "short" })}
+                {new Date(x.month_start).toLocaleDateString("en", {
+                  month: "short",
+                })}
               </small>
             </div>
           ))}

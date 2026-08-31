@@ -57,10 +57,10 @@ export async function GET() {
         [user.id],
       ),
       query(
-        `with months as (select generate_series(date_trunc('month',now() at time zone 'Asia/Dubai')-interval '5 months',date_trunc('month',now() at time zone 'Asia/Dubai'),interval '1 month')::date month),
+        `with months as (select generate_series(date_trunc('month',now() at time zone 'Asia/Dubai')-interval '5 months',date_trunc('month',now() at time zone 'Asia/Dubai'),interval '1 month')::date as month_start),
         daily as (select work_date,min(event_time) filter(where event_type='CLOCK_IN') clock_in,max(event_time) filter(where event_type='CLOCK_OUT') clock_out from attendance_events where user_id=$1 group by work_date),
-        worked as (select date_trunc('month',work_date)::date month,sum(greatest(0,extract(epoch from(clock_out-clock_in))/60))::int minutes from daily where clock_out is not null group by 1)
-        select m.month,coalesce(w.minutes,0)::int minutes from months m left join worked w using(month) order by m.month`,
+        worked as (select date_trunc('month',work_date)::date as month_start,sum(greatest(0,extract(epoch from(clock_out-clock_in))/60))::int as minutes from daily where clock_out is not null group by date_trunc('month',work_date)::date)
+        select m.month_start,coalesce(w.minutes,0)::int as minutes from months m left join worked w on w.month_start=m.month_start order by m.month_start`,
         [user.id],
       ),
       query(
