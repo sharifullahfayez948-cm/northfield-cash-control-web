@@ -3542,7 +3542,7 @@ function EmployeePortal({ user }) {
             <i />
             {scanState === "found" || scanState === "success" ? (
               <div className="scannerSuccess">
-                <Check /> QR FOUND
+                <CheckCircle2 /> QR FOUND
               </div>
             ) : null}
           </div>
