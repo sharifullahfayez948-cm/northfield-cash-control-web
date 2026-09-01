@@ -39,7 +39,12 @@ export async function GET(req) {
           `select u.id,u.display_name,u.username,u.email,u.active,u.role,p.employee_code,p.job_title,p.phone,p.committed_hours,p.shift_start,p.shift_end,p.break_minutes,p.grace_minutes,p.work_days,p.overtime_requires_approval from users u left join employee_profiles p on p.user_id=u.id where u.role<>'Super Admin' order by u.display_name`,
         ),
         query(
-          `select u.id,u.display_name,min(a.event_time) filter(where a.event_type='CLOCK_IN') clock_in,max(a.event_time) filter(where a.event_type='CLOCK_OUT') clock_out,max(a.event_type) last_event from users u left join attendance_events a on a.user_id=u.id and a.work_date=(now() at time zone 'Asia/Dubai')::date where u.role<>'Super Admin' group by u.id,u.display_name order by u.display_name`,
+          `select u.id,u.display_name,
+            min(a.event_time) filter(where a.event_type='CLOCK_IN') clock_in,
+            max(a.event_time) filter(where a.event_type='CLOCK_OUT') clock_out,
+            (array_agg(a.event_type order by a.event_time desc,a.id desc) filter(where a.id is not null))[1] last_event
+          from users u left join attendance_events a on a.user_id=u.id and a.work_date=(now() at time zone 'Asia/Dubai')::date
+          where u.role<>'Super Admin' group by u.id,u.display_name order by u.display_name`,
         ),
         query(
           `select a.id,a.work_date,u.display_name,u.username,a.event_type,a.event_time,a.distance_meters,a.outside_geofence,a.latitude,a.longitude,a.location_accuracy from attendance_events a join users u on u.id=a.user_id where a.work_date between $1 and $2 and ($3::bigint=0 or a.user_id=$3) order by a.work_date desc,a.event_time desc`,
@@ -53,7 +58,20 @@ export async function GET(req) {
           "select site_name,latitude,longitude,radius_meters,block_outside from attendance_site where id=1",
         ),
         query(
-          `with daily as (select user_id,work_date,min(event_time) filter(where event_type='CLOCK_IN') clock_in,max(event_time) filter(where event_type='CLOCK_OUT') clock_out from attendance_events where work_date between $1 and $2 and ($3::bigint=0 or user_id=$3) group by user_id,work_date) select d.work_date,u.display_name,d.clock_in,d.clock_out,case when d.clock_out is not null then greatest(0,floor(extract(epoch from(d.clock_out-d.clock_in))/60))::int end worked_minutes,greatest(0,floor(extract(epoch from((d.clock_in at time zone 'Asia/Dubai')-(d.work_date+coalesce(p.shift_start,'09:00'::time))))/60)-coalesce(p.grace_minutes,10))::int late_minutes,case when d.clock_out is not null then greatest(0,floor(extract(epoch from(d.clock_out-d.clock_in))/60)-floor(extract(epoch from(coalesce(p.shift_end,'18:00'::time)-coalesce(p.shift_start,'09:00'::time)))/60))::int end overtime_minutes from daily d join users u on u.id=d.user_id left join employee_profiles p on p.user_id=d.user_id order by d.work_date desc,u.display_name`,
+          `with ordered as (
+            select user_id,work_date,event_type,event_time,
+              lead(event_type) over(partition by user_id,work_date order by event_time,id) next_type,
+              lead(event_time) over(partition by user_id,work_date order by event_time,id) next_time
+            from attendance_events where work_date between $1 and $2 and ($3::bigint=0 or user_id=$3)
+          ), daily as (
+            select user_id,work_date,min(event_time) filter(where event_type='CLOCK_IN') clock_in,
+              max(next_time) filter(where event_type='CLOCK_IN' and next_type='CLOCK_OUT') clock_out,
+              coalesce(sum(extract(epoch from(next_time-event_time))/60) filter(where event_type='CLOCK_IN' and next_type='CLOCK_OUT'),0)::int worked_minutes
+            from ordered group by user_id,work_date
+          ) select d.work_date,u.display_name,d.clock_in,d.clock_out,d.worked_minutes,
+            greatest(0,floor(extract(epoch from((d.clock_in at time zone 'Asia/Dubai')-(d.work_date+coalesce(p.shift_start,'09:00'::time))))/60)-coalesce(p.grace_minutes,10))::int late_minutes,
+            greatest(0,d.worked_minutes-floor(extract(epoch from(coalesce(p.shift_end,'18:00'::time)-coalesce(p.shift_start,'09:00'::time)))/60))::int overtime_minutes
+          from daily d join users u on u.id=d.user_id left join employee_profiles p on p.user_id=d.user_id order by d.work_date desc,u.display_name`,
           [from, to, selected],
         ),
         query(

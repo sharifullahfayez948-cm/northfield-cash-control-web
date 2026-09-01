@@ -3026,6 +3026,7 @@ function EmployeePortal({ user }) {
   const [d, setD] = useState(),
     [busy, setBusy] = useState(false),
     [scan, setScan] = useState(false),
+    [scanState, setScanState] = useState("opening"),
     [msg, setMsg] = useState(""),
     [now, setNow] = useState(Date.now()),
     [leave, setLeave] = useState(null);
@@ -3071,6 +3072,9 @@ function EmployeePortal({ user }) {
         }),
       });
       window.__northfieldQrControls?.stop?.();
+      setScanState("success");
+      navigator.vibrate?.(120);
+      await new Promise((resolve) => setTimeout(resolve, 650));
       setScan(false);
       setMsg(
         `${attendanceLabel(eventType || d.nextEvent)} recorded successfully.`,
@@ -3151,23 +3155,33 @@ function EmployeePortal({ user }) {
       );
       return;
     }
+    setScanState("opening");
     setScan(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 80));
       const { BrowserQRCodeReader } = await import("@zxing/browser");
       const reader = new BrowserQRCodeReader();
       window.__northfieldQrControls = await reader.decodeFromConstraints(
-        { video: { facingMode: { ideal: "environment" } } },
+        {
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        },
         "attendance-camera",
         (result, _error, controls) => {
           if (result) {
             controls.stop();
+            setScanState("found");
             const scanned = result.getText();
             submit(scanned, d.nextEvent);
           }
         },
       );
+      setScanState("scanning");
     } catch (e) {
+      setScan(false);
       setMsg("Camera could not start. Allow camera access and try again.");
     } finally {
       setBusy(false);
@@ -3199,12 +3213,17 @@ function EmployeePortal({ user }) {
     events = d.events || [],
     inside =
       events.length && events[events.length - 1].event_type !== "CLOCK_OUT",
-    clockIn = events.find((x) => x.event_type === "CLOCK_IN")?.event_time,
+    clockIn = [...events]
+      .reverse()
+      .find((x) => x.event_type === "CLOCK_IN")?.event_time,
     elapsedSeconds =
       inside && clockIn
         ? Math.max(0, Math.floor((now - new Date(clockIn).getTime()) / 1000))
         : 0,
     elapsed = `${String(Math.floor(elapsedSeconds / 3600)).padStart(2, "0")}:${String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, "0")}:${String(elapsedSeconds % 60).padStart(2, "0")}`,
+    todayTotalSeconds =
+      Number(d.totals?.today_minutes || 0) * 60 + (inside ? elapsedSeconds : 0),
+    todayTotal = `${String(Math.floor(todayTotalSeconds / 3600)).padStart(2, "0")}:${String(Math.floor((todayTotalSeconds % 3600) / 60)).padStart(2, "0")}:${String(todayTotalSeconds % 60).padStart(2, "0")}`,
     fmtMinutes = (value) =>
       `${Math.floor(Number(value || 0) / 60)}h ${Number(value || 0) % 60}m`,
     monthTarget = Math.round(Number(p.committed_hours || 48) * 4.33 * 60),
@@ -3259,7 +3278,7 @@ function EmployeePortal({ user }) {
           <Timer />
           <span>
             <small>TODAY TOTAL</small>
-            <b>{inside ? elapsed : fmtMinutes(d.totals?.today_minutes)}</b>
+            <b>{todayTotal}</b>
           </span>
         </article>
         <article>
@@ -3300,7 +3319,7 @@ function EmployeePortal({ user }) {
         <article>
           <Clock3 />
           <small>Today</small>
-          <b>{inside ? elapsed : fmtMinutes(d.totals?.today_minutes)}</b>
+          <b>{todayTotal}</b>
         </article>
         <article>
           <CalendarCheck />
@@ -3503,23 +3522,39 @@ function EmployeePortal({ user }) {
         />
       </section>
       {scan && (
-        <div className="modalShade">
-          <div className="luxModal scannerModal scanBottomSheet">
-            <div className="modalHead">
-              <div>
-                <small>QR SCANNER</small>
-                <h3>Point camera at office QR</h3>
-              </div>
-              <button onClick={closeScanner}>
-                <X />
-              </button>
+        <div className={`attendanceScannerFull ${scanState}`}>
+          <video id="attendance-camera" playsInline muted />
+          <div className="scannerShade" />
+          <header>
+            <button onClick={closeScanner} aria-label="Close scanner">
+              <X />
+            </button>
+            <div>
+              <small>NORTHFIELD SECURE SCAN</small>
+              <b>{attendanceLabel(d.nextEvent)}</b>
             </div>
-            <video id="attendance-camera" playsInline muted />
-            <p>
-              Hold the printed workplace QR inside the frame. Scanning is
-              automatic.
-            </p>
+            <span />
+          </header>
+          <div className="scannerFocus">
+            <i />
+            <i />
+            <i />
+            <i />
+            {scanState === "found" || scanState === "success" ? (
+              <div className="scannerSuccess">
+                <Check /> QR FOUND
+              </div>
+            ) : null}
           </div>
+          <footer>
+            <ScanLine />
+            <b>
+              {scanState === "opening"
+                ? "Starting camera…"
+                : "Scan workplace QR"}
+            </b>
+            <span>Place the complete QR code inside the frame</span>
+          </footer>
         </div>
       )}
       {leave && (
@@ -4078,13 +4113,14 @@ function AttendanceAdmin() {
                 <div>
                   <b>{x.display_name}</b>
                   <small>
-                    {x.clock_in
-                      ? `In ${attendanceTime(x.clock_in)}`
-                      : "Not arrived"}
-                    {x.clock_out ? ` · Out ${attendanceTime(x.clock_out)}` : ""}
+                    {x.last_event === "CLOCK_IN"
+                      ? `On site · In ${attendanceTime(x.clock_in)}`
+                      : x.clock_in
+                        ? `Off duty · Last out ${attendanceTime(x.clock_out)}`
+                        : "Not arrived"}
                   </small>
                 </div>
-                <i className={x.clock_in && !x.clock_out ? "online" : ""} />
+                <i className={x.last_event === "CLOCK_IN" ? "online" : ""} />
               </article>
             ))}
           </div>

@@ -30,25 +30,29 @@ export async function GET() {
         [user.id],
       ),
       query(
-        `with daily as (
-        select work_date,min(event_time) filter(where event_type='CLOCK_IN') clock_in,max(event_time) filter(where event_type='CLOCK_OUT') clock_out
-        from attendance_events where user_id=$1 and work_date>=date_trunc('month',now() at time zone 'Asia/Dubai')::date group by work_date
+        `with ordered as (
+        select work_date,event_type,event_time,lead(event_type) over(partition by work_date order by event_time,id) next_type,lead(event_time) over(partition by work_date order by event_time,id) next_time
+        from attendance_events where user_id=$1 and work_date>=date_trunc('month',now() at time zone 'Asia/Dubai')::date
+      ), daily as (
+        select work_date,min(event_time) filter(where event_type='CLOCK_IN') clock_in,
+          max(next_time) filter(where event_type='CLOCK_IN' and next_type='CLOCK_OUT') clock_out,
+          coalesce(sum(extract(epoch from(next_time-event_time))/60) filter(where event_type='CLOCK_IN' and next_type='CLOCK_OUT'),0)::int worked_minutes
+        from ordered group by work_date
       ), p as (select shift_start,shift_end,grace_minutes from employee_profiles where user_id=$1)
       select d.*,
-        case when d.clock_out is not null then greatest(0,floor(extract(epoch from(d.clock_out-d.clock_in))/60))::int end worked_minutes,
+        d.worked_minutes,
         greatest(0,floor(extract(epoch from((d.clock_in at time zone 'Asia/Dubai')-(d.work_date+coalesce(p.shift_start,'09:00'::time))))/60)-coalesce(p.grace_minutes,10))::int late_minutes,
-        case when d.clock_out is not null then greatest(0,floor(extract(epoch from(d.clock_out-d.clock_in))/60)-floor(extract(epoch from(coalesce(p.shift_end,'18:00'::time)-coalesce(p.shift_start,'09:00'::time)))/60))::int end overtime_minutes
+        greatest(0,d.worked_minutes-floor(extract(epoch from(coalesce(p.shift_end,'18:00'::time)-coalesce(p.shift_start,'09:00'::time)))/60))::int overtime_minutes
       from daily d left join p on true order by d.work_date desc`,
         [user.id],
       ),
       query(
-        `with daily as (
-          select work_date,min(event_time) filter(where event_type='CLOCK_IN') clock_in,
-          max(event_time) filter(where event_type='CLOCK_OUT') clock_out
-          from attendance_events where user_id=$1 group by work_date
+        `with ordered as (
+          select work_date,event_type,event_time,lead(event_type) over(partition by work_date order by event_time,id) next_type,lead(event_time) over(partition by work_date order by event_time,id) next_time
+          from attendance_events where user_id=$1
         ), mins as (
-          select work_date,greatest(0,floor(extract(epoch from(clock_out-clock_in))/60))::int worked
-          from daily where clock_in is not null and clock_out is not null
+          select work_date,coalesce(sum(greatest(0,extract(epoch from(next_time-event_time))/60)) filter(where event_type='CLOCK_IN' and next_type='CLOCK_OUT'),0)::int worked
+          from ordered group by work_date
         ) select
           coalesce(sum(worked) filter(where work_date=(now() at time zone 'Asia/Dubai')::date),0)::int today_minutes,
           coalesce(sum(worked) filter(where date_trunc('month',work_date)=date_trunc('month',now() at time zone 'Asia/Dubai')),0)::int month_minutes,
@@ -58,8 +62,8 @@ export async function GET() {
       ),
       query(
         `with months as (select generate_series(date_trunc('month',now() at time zone 'Asia/Dubai')-interval '5 months',date_trunc('month',now() at time zone 'Asia/Dubai'),interval '1 month')::date as month_start),
-        daily as (select work_date,min(event_time) filter(where event_type='CLOCK_IN') clock_in,max(event_time) filter(where event_type='CLOCK_OUT') clock_out from attendance_events where user_id=$1 group by work_date),
-        worked as (select date_trunc('month',work_date)::date as month_start,sum(greatest(0,extract(epoch from(clock_out-clock_in))/60))::int as minutes from daily where clock_out is not null group by date_trunc('month',work_date)::date)
+        ordered as (select work_date,event_type,event_time,lead(event_type) over(partition by work_date order by event_time,id) next_type,lead(event_time) over(partition by work_date order by event_time,id) next_time from attendance_events where user_id=$1),
+        worked as (select date_trunc('month',work_date)::date as month_start,sum(greatest(0,extract(epoch from(next_time-event_time))/60))::int as minutes from ordered where event_type='CLOCK_IN' and next_type='CLOCK_OUT' group by date_trunc('month',work_date)::date)
         select m.month_start,coalesce(w.minutes,0)::int as minutes from months m left join worked w on w.month_start=m.month_start order by m.month_start`,
         [user.id],
       ),
