@@ -42,7 +42,6 @@ import {
   Timer,
   Target,
   Plane,
-  Fingerprint,
   Trash2,
   UserX,
 } from "lucide-react";
@@ -3027,7 +3026,6 @@ function EmployeePortal({ user }) {
   const [d, setD] = useState(),
     [busy, setBusy] = useState(false),
     [scan, setScan] = useState(false),
-    [scanMenu, setScanMenu] = useState(false),
     [msg, setMsg] = useState(""),
     [now, setNow] = useState(Date.now()),
     [leave, setLeave] = useState(null);
@@ -3153,7 +3151,6 @@ function EmployeePortal({ user }) {
       );
       return;
     }
-    setScanMenu(false);
     setScan(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 80));
@@ -3439,11 +3436,7 @@ function EmployeePortal({ user }) {
             Tap below, verify with Face ID or device PIN, then scan the printed
             workplace QR.
           </p>
-          <button
-            className="attendanceScan"
-            onClick={() => setScanMenu(true)}
-            disabled={busy}
-          >
+          <button className="attendanceScan" onClick={camera} disabled={busy}>
             <QrCode />
             {busy ? "VERIFYING…" : attendanceLabel(d.nextEvent).toUpperCase()}
           </button>
@@ -3526,39 +3519,6 @@ function EmployeePortal({ user }) {
               Hold the printed workplace QR inside the frame. Scanning is
               automatic.
             </p>
-          </div>
-        </div>
-      )}
-      {scanMenu && (
-        <div
-          className="modalShade scanSheetShade"
-          onClick={() => setScanMenu(false)}
-        >
-          <div className="scanActionSheet" onClick={(e) => e.stopPropagation()}>
-            <div className="scanSheetHandle" />
-            <div className="modalHead">
-              <div>
-                <small>SECURE ATTENDANCE</small>
-                <h3>{attendanceLabel(d.nextEvent)}</h3>
-                <p>Verify your identity, then scan the workplace QR.</p>
-              </div>
-              <button onClick={() => setScanMenu(false)}>
-                <X />
-              </button>
-            </div>
-            <button
-              className="scanChoice primary"
-              onClick={camera}
-              disabled={busy}
-            >
-              <span>{busy ? <Fingerprint /> : <QrCode />}</span>
-              <div>
-                <b>{busy ? "VERIFYING FACE ID…" : "VERIFY & SCAN QR CODE"}</b>
-                <small>
-                  Face ID or device PIN opens first, then the camera
-                </small>
-              </div>
-            </button>
           </div>
         </div>
       )}
