@@ -699,14 +699,40 @@ function smoothPath(values, w = 760, h = 230, p = 28) {
   }, `M ${pts[0][0]} ${pts[0][1]}`);
 }
 function CashFlowChart({ days = [] }) {
-  const incoming = days.map((x) => Number(x.cash_in || 0)),
-    outgoing = days.map((x) => Number(x.cash_out || 0)),
+  const seedDate = String(days[0]?.business_day || today()).slice(0, 10),
+    [chartYear, chartMonth] = seedDate.split("-").map(Number),
+    monthLength = new Date(Date.UTC(chartYear, chartMonth, 0)).getUTCDate(),
+    sourceByDay = new Map(
+      days.map((item) => [
+        Number(String(item.business_day).slice(8, 10)),
+        item,
+      ]),
+    ),
+    plotDays = Array.from({ length: monthLength }, (_, index) => {
+      const day = index + 1,
+        original = sourceByDay.get(day),
+        businessDay = `${chartYear}-${String(chartMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      return {
+        business_day: businessDay,
+        label: String(day).padStart(2, "0"),
+        weekday:
+          original?.weekday ||
+          new Date(`${businessDay}T12:00:00Z`).toLocaleDateString("en-GB", {
+            weekday: "short",
+            timeZone: "UTC",
+          }),
+        cash_in: Number(original?.cash_in || 0),
+        cash_out: Number(original?.cash_out || 0),
+      };
+    }),
+    incoming = plotDays.map((x) => Number(x.cash_in || 0)),
+    outgoing = plotDays.map((x) => Number(x.cash_out || 0)),
     max = Math.max(...incoming, ...outgoing, 1),
     left = 32,
     right = 744,
     bottom = 202,
     top = 35,
-    step = days.length > 1 ? (right - left) / (days.length - 1) : 0;
+    step = (right - left) / (plotDays.length - 1);
   const pts = (values) =>
     values.map((v, i) => ({
       x: left + i * step,
@@ -715,9 +741,6 @@ function CashFlowChart({ days = [] }) {
     }));
   const inPts = pts(incoming),
     outPts = pts(outgoing);
-  const singleDay = days.length === 1,
-    singleBarHeight = (value) =>
-      value > 0 ? Math.max(10, (value / max) * (bottom - top)) : 4;
   const path = (points) =>
     points.length < 2
       ? points[0]
@@ -728,8 +751,7 @@ function CashFlowChart({ days = [] }) {
             cx = (prev.x + p.x) / 2;
           return `${d} C ${cx} ${prev.y}, ${cx} ${p.y}, ${p.x} ${p.y}`;
         }, `M ${points[0].x} ${points[0].y}`);
-  const showLabel = (i) =>
-      days.length <= 12 || i === 0 || i === days.length - 1 || i % 3 === 0,
+  const showLabel = (i) => i === 0 || i === plotDays.length - 1 || i % 3 === 0,
     totalIn = incoming.reduce((a, b) => a + b, 0),
     totalOut = outgoing.reduce((a, b) => a + b, 0);
   return (
@@ -783,144 +805,77 @@ function CashFlowChart({ days = [] }) {
             style={{ animationDelay: `${i * 55}ms` }}
           />
         ))}
-        {!singleDay && (
-          <line
-            x1={left}
-            x2={left}
-            y1={top}
-            y2={bottom}
-            className="chartSweep"
+        <line x1={left} x2={left} y1={top} y2={bottom} className="chartSweep" />
+        <path
+          className="chartAreaReveal"
+          d={`${path(inPts)} L ${right} ${bottom} L ${left} ${bottom} Z`}
+          fill="url(#cashAreaDaily)"
+        />
+        <path
+          pathLength="1"
+          d={path(inPts)}
+          className="cashLine in chartLineDraw"
+          filter="url(#dailyGlow)"
+        />
+        <circle className="flowRunner" r="4.5">
+          <animateMotion
+            dur="3.2s"
+            repeatCount="indefinite"
+            path={path(inPts)}
           />
-        )}
-        {!singleDay && (
-          <>
-            <path
-              className="chartAreaReveal"
-              d={`${path(inPts)} L ${right} ${bottom} L ${left} ${bottom} Z`}
-              fill="url(#cashAreaDaily)"
-            />
-            <path
-              pathLength="1"
-              d={path(inPts)}
-              className="cashLine in chartLineDraw"
-              filter="url(#dailyGlow)"
-            />
-            <circle className="flowRunner" r="4.5">
-              <animateMotion
-                dur="3.2s"
-                repeatCount="indefinite"
-                path={path(inPts)}
-              />
-            </circle>
-            <path
-              pathLength="1"
-              d={path(outPts)}
-              className="cashLine out chartLineDraw chartLineDelay"
-            />
-          </>
-        )}
-        {singleDay && (
-          <g className="singleDayBars">
-            <rect
-              x="246"
-              y={bottom - singleBarHeight(incoming[0])}
-              width="104"
-              height={singleBarHeight(incoming[0])}
-              rx="18"
-              className="singleCashBar in"
-            />
-            <rect
-              x="430"
-              y={bottom - singleBarHeight(outgoing[0])}
-              width="104"
-              height={singleBarHeight(outgoing[0])}
-              rx="18"
-              className="singleCashBar out"
-            />
-            <text
-              x="298"
-              y={bottom - singleBarHeight(incoming[0]) - 12}
-              textAnchor="middle"
-              className="singleBarValue"
-            >
-              {money(incoming[0])}
-            </text>
-            <text
-              x="482"
-              y={bottom - singleBarHeight(outgoing[0]) - 12}
-              textAnchor="middle"
-              className="singleBarValue"
-            >
-              {money(outgoing[0])}
-            </text>
-            <text
-              x="298"
-              y="221"
-              textAnchor="middle"
-              className="singleBarLabel"
-            >
-              CASH IN
-            </text>
-            <text
-              x="482"
-              y="221"
-              textAnchor="middle"
-              className="singleBarLabel"
-            >
-              CASH OUT
-            </text>
-          </g>
-        )}
-        {!singleDay &&
-          inPts.map((p, i) => (
-            <g key={`i${i}`}>
-              {i === days.length - 1 && (
-                <circle cx={p.x} cy={p.y} r="8" className="latestPointPulse" />
-              )}
-              <circle
-                cx={p.x}
-                cy={p.y}
-                r={i === days.length - 1 ? 5 : 3.3}
-                className="chartDot in chartDotReveal"
-                style={{ animationDelay: `${620 + i * 45}ms` }}
-              >
-                <title>
-                  {days[i].weekday}, {days[i].business_day} · Cash In:{" "}
-                  {money(p.v)}
-                </title>
-              </circle>
-            </g>
-          ))}
-        {!singleDay &&
-          outPts.map((p, i) => (
+        </circle>
+        <path
+          pathLength="1"
+          d={path(outPts)}
+          className="cashLine out chartLineDraw chartLineDelay"
+        />
+        {inPts.map((p, i) => (
+          <g key={`i${i}`}>
+            {i === plotDays.length - 1 && (
+              <circle cx={p.x} cy={p.y} r="8" className="latestPointPulse" />
+            )}
             <circle
-              key={`o${i}`}
               cx={p.x}
               cy={p.y}
-              r={i === days.length - 1 ? 4.5 : 3}
-              className="chartDot out chartDotReveal"
-              style={{ animationDelay: `${760 + i * 45}ms` }}
+              r={i === plotDays.length - 1 ? 5 : 3.3}
+              className="chartDot in chartDotReveal"
+              style={{ animationDelay: `${620 + i * 45}ms` }}
             >
               <title>
-                {days[i].weekday}, {days[i].business_day} · Cash Out:{" "}
+                {plotDays[i].weekday}, {plotDays[i].business_day} · Cash In:{" "}
                 {money(p.v)}
               </title>
             </circle>
-          ))}
-        {!singleDay &&
-          days.map(
-            (d, i) =>
-              showLabel(i) && (
-                <text
-                  key={d.business_day}
-                  x={left + i * step}
-                  y="224"
-                  textAnchor="middle"
-                >
-                  {d.label}
-                </text>
-              ),
-          )}
+          </g>
+        ))}
+        {outPts.map((p, i) => (
+          <circle
+            key={`o${i}`}
+            cx={p.x}
+            cy={p.y}
+            r={i === plotDays.length - 1 ? 4.5 : 3}
+            className="chartDot out chartDotReveal"
+            style={{ animationDelay: `${760 + i * 45}ms` }}
+          >
+            <title>
+              {plotDays[i].weekday}, {plotDays[i].business_day} · Cash Out:{" "}
+              {money(p.v)}
+            </title>
+          </circle>
+        ))}
+        {plotDays.map(
+          (d, i) =>
+            showLabel(i) && (
+              <text
+                key={d.business_day}
+                x={left + i * step}
+                y="224"
+                textAnchor="middle"
+              >
+                {d.label}
+              </text>
+            ),
+        )}
       </svg>
     </div>
   );
