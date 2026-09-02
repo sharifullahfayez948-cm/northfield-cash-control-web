@@ -7013,12 +7013,69 @@ html[data-theme="dark"] .reportDates input {
 }
 .dailyFlow svg {
   filter: drop-shadow(0 10px 24px rgba(26, 120, 127, 0.06));
+  overflow: visible;
+  border-radius: 22px;
+  background:
+    radial-gradient(
+      circle at 18% 42%,
+      rgba(47, 198, 170, 0.08),
+      transparent 34%
+    ),
+    linear-gradient(180deg, rgba(15, 92, 105, 0.025), transparent 72%);
 }
 .dailyFlow .cashLine.in {
   stroke-width: 5;
 }
 .dailyFlow .cashLine.out {
   stroke-width: 3.5;
+}
+.dailyFlow .chartSweep {
+  stroke: rgba(77, 225, 204, 0.5);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 8;
+  filter: drop-shadow(0 0 7px rgba(47, 198, 170, 0.85));
+  animation: chartSweepMove 3.2s linear infinite;
+  pointer-events: none;
+}
+.dailyFlow .flowRunner {
+  fill: #f7ffff;
+  stroke: #33d5ba;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 8px #2fc6aa);
+  pointer-events: none;
+}
+.dailyFlow .latestPointPulse {
+  fill: none;
+  stroke: #2fc6aa;
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: latestCashPulse 1.65s ease-out infinite;
+}
+@keyframes chartSweepMove {
+  from {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  to {
+    transform: translateX(712px);
+    opacity: 0;
+  }
+}
+@keyframes latestCashPulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.55);
+  }
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(2.45);
+  }
 }
 .movementRing {
   position: relative;
@@ -7190,6 +7247,22 @@ html[data-theme="dark"] .reportDates input {
   padding: 10px 8px;
   font-size: 8px;
 }
+.qrSettingsButton {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #dbe8eb;
+  border-radius: 12px;
+  color: #456b7a;
+  background: #f7fbfb;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.45px;
+  cursor: pointer;
+}
 .siteConfigDisclosure {
   margin-top: 12px;
   border-top: 1px solid #e3ecef;
@@ -7328,6 +7401,116 @@ html[data-theme="dark"] .reportDates input {
   font-weight: 900;
   letter-spacing: 0.6px;
 }
+.staffToolGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 16px 0 0;
+}
+.staffToolCard {
+  position: relative;
+  min-height: 116px;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto 20px;
+  align-items: center;
+  gap: 14px;
+  overflow: hidden;
+  text-align: left;
+  border: 1px solid rgba(34, 126, 145, 0.16);
+  border-radius: 22px;
+  color: #173b4f;
+  background: linear-gradient(145deg, #fff, #f3f9fa);
+  box-shadow: 0 16px 38px rgba(8, 45, 62, 0.08);
+  cursor: pointer;
+  transition:
+    transform 0.22s ease,
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
+}
+.staffToolCard:hover {
+  transform: translateY(-3px);
+  border-color: #9bcfd2;
+  box-shadow: 0 20px 44px rgba(8, 62, 77, 0.13);
+}
+.staffToolCard > span {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  color: #137789;
+  background: linear-gradient(145deg, #e7f8f5, #dceff2);
+}
+.staffToolCard > span svg {
+  width: 21px;
+}
+.staffToolCard small,
+.staffToolCard b,
+.staffToolCard p {
+  display: block;
+}
+.staffToolCard small {
+  color: #8a9da6;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 1.1px;
+}
+.staffToolCard b {
+  margin-top: 4px;
+  font-size: 15px;
+}
+.staffToolCard p {
+  margin: 4px 0 0;
+  color: #718993;
+  font-size: 9px;
+}
+.staffToolCard em {
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: #9a6a1b;
+  background: #fff4d8;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.staffToolCard > svg {
+  width: 17px;
+  color: #8299a3;
+}
+.staffPanelShade {
+  padding: 24px;
+}
+.staffWorkspaceModal {
+  width: min(980px, 96vw);
+  max-height: min(90vh, 900px);
+  overflow: auto;
+}
+.reportWorkspaceModal {
+  width: min(1320px, 97vw);
+}
+.settingsWorkspaceModal {
+  width: min(620px, 95vw);
+}
+.modalInnerSection {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  animation: none;
+}
+.staffWorkspaceModal .modalInnerSection > .cardHeader {
+  display: none;
+}
+.modalSiteConfig {
+  padding: 2px 2px 8px;
+}
+.modalSiteConfig > .btnPrimary {
+  width: 100%;
+  margin-top: 4px;
+}
 @keyframes staffPanelIn {
   from {
     opacity: 0;
@@ -7365,6 +7548,19 @@ html[data-theme="dark"] .siteConfigDisclosure {
 html[data-theme="dark"] .selectedStaffActions > span {
   color: #72d6bc;
   background: #14382f;
+}
+html[data-theme="dark"] .qrSettingsButton,
+html[data-theme="dark"] .staffToolCard {
+  color: #e2eef2;
+  border-color: #29434d;
+  background: linear-gradient(145deg, #102630, #0c2029);
+}
+html[data-theme="dark"] .staffToolCard > span {
+  color: #65d8c4;
+  background: #173844;
+}
+html[data-theme="dark"] .staffToolCard p {
+  color: #86a0aa;
 }
 
 @media (max-width: 1200px) {
@@ -7423,6 +7619,36 @@ html[data-theme="dark"] .selectedStaffActions > span {
   .movementRing {
     width: 190px;
     height: 190px;
+  }
+  .staffToolGrid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .staffToolCard {
+    min-height: 98px;
+    padding: 15px;
+    grid-template-columns: 42px 1fr 18px;
+    gap: 11px;
+  }
+  .staffToolCard > span {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+  }
+  .staffToolCard em {
+    display: none;
+  }
+  .staffPanelShade {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .staffWorkspaceModal {
+    width: 100%;
+    max-width: none;
+    max-height: 91dvh;
+    margin: 0;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    border-radius: 26px 26px 0 0;
   }
 }
 .qrStation {

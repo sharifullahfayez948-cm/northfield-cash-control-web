@@ -231,6 +231,20 @@ function pdfTime(value) {
 function pdfCell(key, value) {
   if (key === "business_date" || key === "date") return pdfDate(value);
   if (key === "entry_time" || key === "time") return pdfTime(value);
+  if (key === "finalized_at" && value) {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime()))
+      return date.toLocaleString("en-GB", {
+        timeZone: "Asia/Dubai",
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      });
+  }
   return value ?? "";
 }
 function Table({ rows = [], actions }) {
@@ -770,6 +784,15 @@ function CashFlowChart({ days = [] }) {
           />
         ))}
         {!singleDay && (
+          <line
+            x1={left}
+            x2={left}
+            y1={top}
+            y2={bottom}
+            className="chartSweep"
+          />
+        )}
+        {!singleDay && (
           <>
             <path
               className="chartAreaReveal"
@@ -782,6 +805,13 @@ function CashFlowChart({ days = [] }) {
               className="cashLine in chartLineDraw"
               filter="url(#dailyGlow)"
             />
+            <circle className="flowRunner" r="4.5">
+              <animateMotion
+                dur="3.2s"
+                repeatCount="indefinite"
+                path={path(inPts)}
+              />
+            </circle>
             <path
               pathLength="1"
               d={path(outPts)}
@@ -843,19 +873,23 @@ function CashFlowChart({ days = [] }) {
         )}
         {!singleDay &&
           inPts.map((p, i) => (
-            <circle
-              key={`i${i}`}
-              cx={p.x}
-              cy={p.y}
-              r={i === days.length - 1 ? 5 : 3.3}
-              className="chartDot in chartDotReveal"
-              style={{ animationDelay: `${620 + i * 45}ms` }}
-            >
-              <title>
-                {days[i].weekday}, {days[i].business_day} · Cash In:{" "}
-                {money(p.v)}
-              </title>
-            </circle>
+            <g key={`i${i}`}>
+              {i === days.length - 1 && (
+                <circle cx={p.x} cy={p.y} r="8" className="latestPointPulse" />
+              )}
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={i === days.length - 1 ? 5 : 3.3}
+                className="chartDot in chartDotReveal"
+                style={{ animationDelay: `${620 + i * 45}ms` }}
+              >
+                <title>
+                  {days[i].weekday}, {days[i].business_day} · Cash In:{" "}
+                  {money(p.v)}
+                </title>
+              </circle>
+            </g>
           ))}
         {!singleDay &&
           outPts.map((p, i) => (
@@ -2816,7 +2850,11 @@ function ReportsV2() {
         );
       const cards = [
         [
-          scope === "transfer" ? "TOTAL AED" : "OPENING / DAYS",
+          scope === "transfer"
+            ? "TOTAL AED"
+            : scope === "closing"
+              ? "OPENING CASH"
+              : "OPENING / DAYS",
           Number(
             summary.opening_cash ?? summary.day_count ?? summary.total_aed ?? 0,
           ),
@@ -2827,21 +2865,17 @@ function ReportsV2() {
           Number(summary.total_irr ?? summary.total_in ?? 0),
           [26, 135, 108],
         ],
-        [
-          scope === "closing" ? "VARIANCE" : "TOTAL OUT",
-          Number(summary.total_variance ?? summary.total_out ?? 0),
-          [192, 79, 67],
-        ],
+        ["TOTAL OUT", Number(summary.total_out ?? 0), [192, 79, 67]],
         [
           scope === "transfer"
             ? "RECORDS"
             : scope === "closing"
-              ? "FINALIZED"
+              ? "FINAL CASH"
               : "BALANCE",
           scope === "transfer"
             ? Number(summary.record_count || 0)
             : scope === "closing"
-              ? Number(summary.finalized_count || 0)
+              ? Number(summary.final_cash || 0)
               : running,
           [205, 145, 44],
         ],
@@ -3756,6 +3790,7 @@ function AttendanceAdmin() {
     [eventEdit, setEventEdit] = useState(null),
     [create, setCreate] = useState(null),
     [selectedStaffId, setSelectedStaffId] = useState(null),
+    [adminPanel, setAdminPanel] = useState(null),
     [siteEdit, setSiteEdit] = useState(null),
     [filters, setFilters] = useState({
       from: today().slice(0, 8) + "01",
@@ -4210,77 +4245,12 @@ function AttendanceAdmin() {
             </button>
           </div>
           {siteEdit && (
-            <details className="siteConfigDisclosure">
-              <summary>
-                <Settings size={14} /> WORKPLACE & GPS SETTINGS
-              </summary>
-              <form className="siteConfig" onSubmit={saveSite}>
-                <div className="field">
-                  <label>Workplace Name</label>
-                  <input
-                    value={siteEdit.siteName}
-                    onChange={(e) =>
-                      setSiteEdit({ ...siteEdit, siteName: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="siteCoordinates">
-                  <div className="field">
-                    <label>Latitude</label>
-                    <input
-                      value={siteEdit.latitude}
-                      onChange={(e) =>
-                        setSiteEdit({ ...siteEdit, latitude: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label>Longitude</label>
-                    <input
-                      value={siteEdit.longitude}
-                      onChange={(e) =>
-                        setSiteEdit({ ...siteEdit, longitude: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn btnSoft"
-                  onClick={useCurrentLocation}
-                >
-                  <ScanLine size={14} /> USE THIS DEVICE LOCATION
-                </button>
-                <div className="field">
-                  <label>Allowed Radius (meters)</label>
-                  <input
-                    type="number"
-                    min="20"
-                    value={siteEdit.radiusMeters}
-                    onChange={(e) =>
-                      setSiteEdit({ ...siteEdit, radiusMeters: e.target.value })
-                    }
-                  />
-                </div>
-                <label className="activeToggle">
-                  <input
-                    type="checkbox"
-                    checked={siteEdit.blockOutside}
-                    onChange={(e) =>
-                      setSiteEdit({
-                        ...siteEdit,
-                        blockOutside: e.target.checked,
-                      })
-                    }
-                  />
-                  <span />
-                  <b>Block scans outside this radius</b>
-                </label>
-                <button className="btn btnPrimary">
-                  SAVE WORKPLACE LOCATION
-                </button>
-              </form>
-            </details>
+            <button
+              className="qrSettingsButton"
+              onClick={() => setAdminPanel("settings")}
+            >
+              <Settings size={14} /> WORKPLACE & GPS SETTINGS
+            </button>
           )}
         </section>
         <section className="card attendanceRoster">
@@ -4397,248 +4367,330 @@ function AttendanceAdmin() {
           ))}
         </div>
       </section>
-      <section className="card managerLeaveBoard">
-        <div className="cardHeader">
-          <div>
-            <div className="sectionTitle">Leave requests</div>
-            <div className="sectionSub">
-              Approve or reject staff requests from one place.
-            </div>
-          </div>
-          <span className="softBadge">
-            {(d.leaves || []).filter((x) => x.status === "PENDING").length}{" "}
-            PENDING
+      <div className="staffToolGrid">
+        <button
+          className="staffToolCard leaveTool"
+          onClick={() => setAdminPanel("leaves")}
+        >
+          <span>
+            <Plane />
           </span>
-        </div>
-        <div className="leaveRequestList">
-          {(d.leaves || []).length ? (
-            d.leaves.map((item) => (
-              <article key={item.id}>
-                <div className="leaveAvatar">
-                  {String(item.display_name || "S")[0]}
-                </div>
-                <div>
-                  <b>{item.display_name}</b>
-                  <span>
-                    {item.leave_type} · {String(item.date_from).slice(0, 10)} →{" "}
-                    {String(item.date_to).slice(0, 10)}
-                  </span>
-                  <small>{item.note || "No note provided"}</small>
-                </div>
-                <em
-                  className={`leaveStatus ${String(item.status).toLowerCase()}`}
-                >
-                  {item.status}
-                </em>
-                {item.status === "PENDING" && (
-                  <div className="leaveDecision">
-                    <button onClick={() => decideLeave(item.id, "REJECTED")}>
-                      REJECT
-                    </button>
-                    <button onClick={() => decideLeave(item.id, "APPROVED")}>
-                      APPROVE
-                    </button>
-                  </div>
-                )}
-              </article>
-            ))
-          ) : (
-            <div className="attendanceEmpty">
-              <Plane />
-              <b>No leave requests</b>
-              <span>New requests will appear here.</span>
-            </div>
-          )}
-        </div>
-      </section>
-      <section className="card attendanceReports">
-        <div className="cardHeader">
           <div>
-            <div className="sectionTitle">Attendance Reports</div>
-            <div className="sectionSub">
-              Choose one employee or the full team, then export PDF or Excel.
-            </div>
+            <small>STAFF REQUESTS</small>
+            <b>Leave approvals</b>
+            <p>Review pending and previous requests</p>
           </div>
-        </div>
-        <div className="attendanceFilters">
-          <label>
-            Employee
-            <select
-              value={filters.userId}
-              onChange={(e) =>
-                setFilters({ ...filters, userId: e.target.value })
-              }
-            >
-              <option value="0">All Employees</option>
-              {d.staff.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.display_name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            From
-            <input
-              type="date"
-              value={filters.from}
-              onChange={(e) => setFilters({ ...filters, from: e.target.value })}
-            />
-          </label>
-          <label>
-            To
-            <input
-              type="date"
-              value={filters.to}
-              onChange={(e) => setFilters({ ...filters, to: e.target.value })}
-            />
-          </label>
-          <button className="btn btnPrimary" onClick={() => load(filters)}>
-            RUN REPORT
-          </button>
-          <button className="btn btnSoft" onClick={pdfReport}>
-            PDF
-          </button>
-          <button className="btn btnSoft" onClick={excelReport}>
-            EXCEL
-          </button>
-        </div>
-        <div className="tableWrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Employee</th>
-                <th>Clock In</th>
-                <th>Clock Out</th>
-                <th>Worked</th>
-                <th>Late</th>
-                <th>Overtime</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(d.summary || []).map((x, i) => (
-                <tr key={`${x.display_name}-${x.work_date}-${i}`}>
-                  <td>{String(x.work_date).slice(0, 10)}</td>
-                  <td>{x.display_name}</td>
-                  <td>{attendanceTime(x.clock_in)}</td>
-                  <td>{attendanceTime(x.clock_out)}</td>
-                  <td>
-                    {x.worked_minutes == null
-                      ? "Open"
-                      : `${Math.floor(x.worked_minutes / 60)}h ${x.worked_minutes % 60}m`}
-                  </td>
-                  <td>{x.late_minutes || 0}m</td>
-                  <td>{x.overtime_minutes || 0}m</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <details className="locationAudit">
-          <summary>Location Audit · {(d.records || []).length} scans</summary>
-          <div className="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Employee</th>
-                  <th>Event</th>
-                  <th>Distance</th>
-                  <th>Actions</th>
-                  <th>Map</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(d.records || []).map((x) => (
-                  <tr key={x.id}>
-                    <td>{String(x.work_date).slice(0, 10)}</td>
-                    <td>{x.display_name}</td>
-                    <td>{attendanceLabel(x.event_type)}</td>
-                    <td>
-                      {Number(x.distance_meters || 0) >= 1000
-                        ? `${(Number(x.distance_meters) / 1000).toFixed(2)} km`
-                        : `${Number(x.distance_meters || 0).toFixed(0)} m`}
-                    </td>
-                    <td>
-                      <div className="recordActions">
-                        <button
-                          onClick={() => {
-                            const local = new Date(x.event_time),
-                              offset = local.getTimezoneOffset() * 60000;
-                            setEventEdit({
-                              id: x.id,
-                              eventType: x.event_type,
-                              eventTime: new Date(local.getTime() - offset)
-                                .toISOString()
-                                .slice(0, 16),
-                              note: "Manager correction",
-                            });
-                          }}
-                        >
-                          <Pencil /> EDIT
-                        </button>
-                        <button onClick={() => deleteEvent(x.id)}>
-                          <Trash2 /> DELETE
-                        </button>
-                      </div>
-                    </td>
-                    <td>
-                      {x.latitude ? (
-                        <a
-                          target="_blank"
-                          rel="noreferrer"
-                          href={`https://www.google.com/maps?q=${x.latitude},${x.longitude}`}
-                          className={
-                            x.outside_geofence
-                              ? "locationOutside"
-                              : "locationOk"
-                          }
-                        >
-                          VIEW MAP
-                        </a>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <em>{pendingLeaves} PENDING</em>
+          <ArrowUpRight />
+        </button>
+        <button
+          className="staffToolCard reportTool"
+          onClick={() => setAdminPanel("reports")}
+        >
+          <span>
+            <FileText />
+          </span>
+          <div>
+            <small>TIME & ATTENDANCE</small>
+            <b>Reports and audit</b>
+            <p>Run reports, export files and review scans</p>
           </div>
-        </details>
-        {(d.attempts || []).some((x) => !x.accepted) && (
-          <>
-            <div className="outsideAttempts">
-              <AlertTriangle />
+          <em>{(d.summary || []).length} RECORDS</em>
+          <ArrowUpRight />
+        </button>
+      </div>
+      {adminPanel === "settings" && siteEdit && (
+        <div className="modalShade staffPanelShade">
+          <div className="luxModal staffWorkspaceModal settingsWorkspaceModal">
+            <div className="modalHead">
               <div>
-                <b>Blocked outside-location attempts</b>
-                <span>
-                  {d.attempts.filter((x) => !x.accepted).length} attempt(s) were
-                  blocked and preserved in the audit log.
+                <small>SECURE ATTENDANCE</small>
+                <h3>Workplace & GPS settings</h3>
+                <p>Set the exact office position and permitted scan radius.</p>
+              </div>
+              <button type="button" onClick={() => setAdminPanel(null)}>
+                <X />
+              </button>
+            </div>
+            <form
+              className="siteConfig modalSiteConfig"
+              onSubmit={async (e) => {
+                await saveSite(e);
+                setAdminPanel(null);
+              }}
+            >
+              <label>
+                Workplace Name
+                <input
+                  value={siteEdit.siteName}
+                  onChange={(e) =>
+                    setSiteEdit({ ...siteEdit, siteName: e.target.value })
+                  }
+                />
+              </label>
+              <div className="formGrid two">
+                <label>
+                  Latitude
+                  <input
+                    type="number"
+                    step="any"
+                    value={siteEdit.latitude}
+                    onChange={(e) =>
+                      setSiteEdit({ ...siteEdit, latitude: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Longitude
+                  <input
+                    type="number"
+                    step="any"
+                    value={siteEdit.longitude}
+                    onChange={(e) =>
+                      setSiteEdit({ ...siteEdit, longitude: e.target.value })
+                    }
+                  />
+                </label>
+              </div>
+              <button
+                type="button"
+                className="btn btnSoft"
+                onClick={useCurrentLocation}
+              >
+                <MapPin size={14} /> USE CURRENT LOCATION
+              </button>
+              <label>
+                Allowed Radius (meters)
+                <input
+                  type="number"
+                  min="20"
+                  value={siteEdit.radiusMeters}
+                  onChange={(e) =>
+                    setSiteEdit({ ...siteEdit, radiusMeters: e.target.value })
+                  }
+                />
+              </label>
+              <label className="switchRow">
+                <input
+                  type="checkbox"
+                  checked={siteEdit.blockOutside}
+                  onChange={(e) =>
+                    setSiteEdit({ ...siteEdit, blockOutside: e.target.checked })
+                  }
+                />
+                <span /> Block scans outside this radius
+              </label>
+              <button className="btn btnPrimary" type="submit">
+                SAVE WORKPLACE LOCATION
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+      {adminPanel === "leaves" && (
+        <div className="modalShade staffPanelShade">
+          <div className="luxModal staffWorkspaceModal">
+            <div className="modalHead">
+              <div>
+                <small>STAFF MANAGEMENT</small>
+                <h3>Leave requests</h3>
+                <p>Approve or reject employee requests.</p>
+              </div>
+              <button type="button" onClick={() => setAdminPanel(null)}>
+                <X />
+              </button>
+            </div>
+            <section className="managerLeaveBoard modalInnerSection">
+              <div className="cardHeader">
+                <div>
+                  <div className="sectionTitle">Leave requests</div>
+                  <div className="sectionSub">
+                    Approve or reject staff requests from one place.
+                  </div>
+                </div>
+                <span className="softBadge">
+                  {
+                    (d.leaves || []).filter((x) => x.status === "PENDING")
+                      .length
+                  }{" "}
+                  PENDING
                 </span>
               </div>
+              <div className="leaveRequestList">
+                {(d.leaves || []).length ? (
+                  d.leaves.map((item) => (
+                    <article key={item.id}>
+                      <div className="leaveAvatar">
+                        {String(item.display_name || "S")[0]}
+                      </div>
+                      <div>
+                        <b>{item.display_name}</b>
+                        <span>
+                          {item.leave_type} ·{" "}
+                          {String(item.date_from).slice(0, 10)} →{" "}
+                          {String(item.date_to).slice(0, 10)}
+                        </span>
+                        <small>{item.note || "No note provided"}</small>
+                      </div>
+                      <em
+                        className={`leaveStatus ${String(item.status).toLowerCase()}`}
+                      >
+                        {item.status}
+                      </em>
+                      {item.status === "PENDING" && (
+                        <div className="leaveDecision">
+                          <button
+                            onClick={() => decideLeave(item.id, "REJECTED")}
+                          >
+                            REJECT
+                          </button>
+                          <button
+                            onClick={() => decideLeave(item.id, "APPROVED")}
+                          >
+                            APPROVE
+                          </button>
+                        </div>
+                      )}
+                    </article>
+                  ))
+                ) : (
+                  <div className="attendanceEmpty">
+                    <Plane />
+                    <b>No leave requests</b>
+                    <span>New requests will appear here.</span>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        </div>
+      )}
+      {adminPanel === "reports" && (
+        <div className="modalShade staffPanelShade">
+          <div className="luxModal staffWorkspaceModal reportWorkspaceModal">
+            <div className="modalHead">
+              <div>
+                <small>MANAGEMENT REPORTING</small>
+                <h3>Attendance reports & audit</h3>
+                <p>Filter, export and review employee attendance.</p>
+              </div>
+              <button type="button" onClick={() => setAdminPanel(null)}>
+                <X />
+              </button>
             </div>
-            <details className="locationAudit blockedAudit">
-              <summary>Open blocked attempts</summary>
+            <section className="attendanceReports modalInnerSection">
+              <div className="cardHeader">
+                <div>
+                  <div className="sectionTitle">Attendance Reports</div>
+                  <div className="sectionSub">
+                    Choose one employee or the full team, then export PDF or
+                    Excel.
+                  </div>
+                </div>
+              </div>
+              <div className="attendanceFilters">
+                <label>
+                  Employee
+                  <select
+                    value={filters.userId}
+                    onChange={(e) =>
+                      setFilters({ ...filters, userId: e.target.value })
+                    }
+                  >
+                    <option value="0">All Employees</option>
+                    {d.staff.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  From
+                  <input
+                    type="date"
+                    value={filters.from}
+                    onChange={(e) =>
+                      setFilters({ ...filters, from: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  To
+                  <input
+                    type="date"
+                    value={filters.to}
+                    onChange={(e) =>
+                      setFilters({ ...filters, to: e.target.value })
+                    }
+                  />
+                </label>
+                <button
+                  className="btn btnPrimary"
+                  onClick={() => load(filters)}
+                >
+                  RUN REPORT
+                </button>
+                <button className="btn btnSoft" onClick={pdfReport}>
+                  PDF
+                </button>
+                <button className="btn btnSoft" onClick={excelReport}>
+                  EXCEL
+                </button>
+              </div>
               <div className="tableWrap">
                 <table>
                   <thead>
                     <tr>
+                      <th>Date</th>
                       <th>Employee</th>
-                      <th>Time</th>
-                      <th>Attempt</th>
-                      <th>Distance</th>
-                      <th>Exact Location</th>
+                      <th>Clock In</th>
+                      <th>Clock Out</th>
+                      <th>Worked</th>
+                      <th>Late</th>
+                      <th>Overtime</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {d.attempts
-                      .filter((x) => !x.accepted)
-                      .map((x) => (
+                    {(d.summary || []).map((x, i) => (
+                      <tr key={`${x.display_name}-${x.work_date}-${i}`}>
+                        <td>{String(x.work_date).slice(0, 10)}</td>
+                        <td>{x.display_name}</td>
+                        <td>{attendanceTime(x.clock_in)}</td>
+                        <td>{attendanceTime(x.clock_out)}</td>
+                        <td>
+                          {x.worked_minutes == null
+                            ? "Open"
+                            : `${Math.floor(x.worked_minutes / 60)}h ${x.worked_minutes % 60}m`}
+                        </td>
+                        <td>{x.late_minutes || 0}m</td>
+                        <td>{x.overtime_minutes || 0}m</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <details className="locationAudit">
+                <summary>
+                  Location Audit · {(d.records || []).length} scans
+                </summary>
+                <div className="tableWrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Employee</th>
+                        <th>Event</th>
+                        <th>Distance</th>
+                        <th>Actions</th>
+                        <th>Map</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(d.records || []).map((x) => (
                         <tr key={x.id}>
-                          <td>{x.display_name || "Unknown"}</td>
-                          <td>{new Date(x.attempted_at).toLocaleString()}</td>
+                          <td>{String(x.work_date).slice(0, 10)}</td>
+                          <td>{x.display_name}</td>
                           <td>{attendanceLabel(x.event_type)}</td>
                           <td>
                             {Number(x.distance_meters || 0) >= 1000
@@ -4646,24 +4698,116 @@ function AttendanceAdmin() {
                               : `${Number(x.distance_meters || 0).toFixed(0)} m`}
                           </td>
                           <td>
-                            <a
-                              target="_blank"
-                              rel="noreferrer"
-                              className="locationOutside"
-                              href={`https://www.google.com/maps?q=${x.latitude},${x.longitude}`}
-                            >
-                              VIEW ON MAP
-                            </a>
+                            <div className="recordActions">
+                              <button
+                                onClick={() => {
+                                  const local = new Date(x.event_time),
+                                    offset = local.getTimezoneOffset() * 60000;
+                                  setEventEdit({
+                                    id: x.id,
+                                    eventType: x.event_type,
+                                    eventTime: new Date(
+                                      local.getTime() - offset,
+                                    )
+                                      .toISOString()
+                                      .slice(0, 16),
+                                    note: "Manager correction",
+                                  });
+                                }}
+                              >
+                                <Pencil /> EDIT
+                              </button>
+                              <button onClick={() => deleteEvent(x.id)}>
+                                <Trash2 /> DELETE
+                              </button>
+                            </div>
+                          </td>
+                          <td>
+                            {x.latitude ? (
+                              <a
+                                target="_blank"
+                                rel="noreferrer"
+                                href={`https://www.google.com/maps?q=${x.latitude},${x.longitude}`}
+                                className={
+                                  x.outside_geofence
+                                    ? "locationOutside"
+                                    : "locationOk"
+                                }
+                              >
+                                VIEW MAP
+                              </a>
+                            ) : (
+                              "—"
+                            )}
                           </td>
                         </tr>
                       ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          </>
-        )}
-      </section>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+              {(d.attempts || []).some((x) => !x.accepted) && (
+                <>
+                  <div className="outsideAttempts">
+                    <AlertTriangle />
+                    <div>
+                      <b>Blocked outside-location attempts</b>
+                      <span>
+                        {d.attempts.filter((x) => !x.accepted).length}{" "}
+                        attempt(s) were blocked and preserved in the audit log.
+                      </span>
+                    </div>
+                  </div>
+                  <details className="locationAudit blockedAudit">
+                    <summary>Open blocked attempts</summary>
+                    <div className="tableWrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Employee</th>
+                            <th>Time</th>
+                            <th>Attempt</th>
+                            <th>Distance</th>
+                            <th>Exact Location</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {d.attempts
+                            .filter((x) => !x.accepted)
+                            .map((x) => (
+                              <tr key={x.id}>
+                                <td>{x.display_name || "Unknown"}</td>
+                                <td>
+                                  {new Date(x.attempted_at).toLocaleString()}
+                                </td>
+                                <td>{attendanceLabel(x.event_type)}</td>
+                                <td>
+                                  {Number(x.distance_meters || 0) >= 1000
+                                    ? `${(Number(x.distance_meters) / 1000).toFixed(2)} km`
+                                    : `${Number(x.distance_meters || 0).toFixed(0)} m`}
+                                </td>
+                                <td>
+                                  <a
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="locationOutside"
+                                    href={`https://www.google.com/maps?q=${x.latitude},${x.longitude}`}
+                                  >
+                                    VIEW ON MAP
+                                  </a>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                </>
+              )}
+            </section>
+          </div>
+        </div>
+      )}
       {eventEdit && (
         <div className="modalShade">
           <div className="luxModal eventEditorModal">
