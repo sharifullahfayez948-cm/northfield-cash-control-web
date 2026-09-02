@@ -6986,6 +6986,445 @@ html[data-theme="dark"] .reportDates input {
     transform: scale(1);
   }
 }
+
+/* Dashboard motion and Staff command center */
+.dashboardCharts .chartCard,
+.dashboardCharts .movementCard {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(34, 126, 145, 0.13);
+  box-shadow: 0 22px 60px rgba(8, 45, 62, 0.1);
+}
+.dashboardCharts .chartCard:before,
+.dashboardCharts .movementCard:before {
+  content: "";
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  right: -110px;
+  top: -145px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(47, 198, 170, 0.13),
+    transparent 68%
+  );
+  pointer-events: none;
+}
+.dailyFlow svg {
+  filter: drop-shadow(0 10px 24px rgba(26, 120, 127, 0.06));
+}
+.dailyFlow .cashLine.in {
+  stroke-width: 5;
+}
+.dailyFlow .cashLine.out {
+  stroke-width: 3.5;
+}
+.movementRing {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  margin: 10px auto 18px;
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0 18px 24px rgba(9, 70, 82, 0.13));
+  animation: movementRingEnter 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.movementRing svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.movementTrack,
+.movementArc {
+  fill: none;
+  stroke-width: 12;
+}
+.movementTrack {
+  stroke: #e8f0f2;
+}
+.movementArc {
+  stroke-linecap: round;
+  stroke-dashoffset: 0;
+  animation: movementArcDraw 1.2s 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.movementArc.out {
+  stroke: url(#movementOutGradient);
+  stroke-dasharray: 100 0;
+}
+.movementArc.in {
+  stroke: url(#movementInGradient);
+}
+.movementRing > div {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.movementRing small {
+  color: #78909c;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 1.4px;
+}
+.movementRing b {
+  margin-top: 7px;
+  color: #12364a;
+  font-size: 17px;
+}
+.movementRing span {
+  margin-top: 5px;
+  color: #8da0a8;
+  font-size: 8px;
+  font-weight: 750;
+}
+@keyframes movementArcDraw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes movementRingEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.82) rotate(-5deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+.staffOverview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 4px 0 16px;
+}
+.staffOverview article {
+  min-height: 88px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  border: 1px solid rgba(36, 121, 142, 0.14);
+  border-radius: 20px;
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(242, 249, 250, 0.96)
+  );
+  box-shadow: 0 14px 32px rgba(7, 45, 61, 0.07);
+  animation: staffPanelIn 0.52s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.staffOverview article:nth-child(2) {
+  animation-delay: 0.06s;
+}
+.staffOverview article:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.staffOverview article:nth-child(4) {
+  animation-delay: 0.18s;
+}
+.staffOverview article > svg {
+  width: 42px;
+  height: 42px;
+  padding: 10px;
+  border-radius: 14px;
+  color: #116d7e;
+  background: linear-gradient(145deg, #e6f6f5, #d7ecef);
+}
+.staffOverview small,
+.staffOverview b {
+  display: block;
+}
+.staffOverview small {
+  color: #81949d;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 1.1px;
+}
+.staffOverview b {
+  margin-top: 4px;
+  color: #12384c;
+  font-size: 22px;
+}
+.staffCommandGrid {
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 16px;
+}
+.compactQrStation {
+  padding: 20px;
+  text-align: left;
+}
+.compactQrStation h3 {
+  font-size: 17px;
+}
+.compactQrStation p {
+  margin: 0 0 12px;
+  max-width: none;
+}
+.compactQrStation img {
+  width: 150px;
+  padding: 8px;
+  margin: 8px auto 10px;
+  border: 1px solid #e1ecef;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(8, 48, 64, 0.09);
+}
+.qrPrintActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0;
+}
+.qrPrintActions .btn {
+  min-width: 0;
+  padding: 10px 8px;
+  font-size: 8px;
+}
+.siteConfigDisclosure {
+  margin-top: 12px;
+  border-top: 1px solid #e3ecef;
+}
+.siteConfigDisclosure summary {
+  padding: 13px 2px 4px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #51707f;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.7px;
+  cursor: pointer;
+  list-style: none;
+}
+.siteConfigDisclosure summary::-webkit-details-marker {
+  display: none;
+}
+.siteConfigDisclosure[open] summary {
+  color: #176c7e;
+}
+.siteConfigDisclosure .siteConfig {
+  margin-top: 10px;
+  animation: staffPanelIn 0.28s ease-out both;
+}
+.attendanceRoster {
+  min-height: 100%;
+}
+.rosterList {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.employeeSchedules,
+.managerLeaveBoard,
+.attendanceReports {
+  padding: 24px;
+  border-color: rgba(34, 126, 145, 0.12);
+  box-shadow: 0 18px 48px rgba(8, 45, 62, 0.07);
+  animation: staffPanelIn 0.52s 0.08s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.employeeSchedules .cardHeader {
+  align-items: flex-start;
+  gap: 16px;
+}
+.selectedStaffActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 7px;
+}
+.selectedStaffActions > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  color: #227262;
+  background: #eaf8f3;
+  font-size: 8px;
+  font-weight: 900;
+}
+.selectedStaffActions > span i,
+.staffAccessBadge i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2fc6aa;
+  box-shadow: 0 0 8px #2fc6aa;
+}
+.btnWarning {
+  color: #94661c !important;
+  background: #fff6df !important;
+  border-color: #efd89c !important;
+}
+.btnSuccess {
+  color: #19715c !important;
+  background: #eaf8f3 !important;
+  border-color: #cbeadf !important;
+}
+.btnDanger {
+  color: #a7494d !important;
+  background: #fff0f0 !important;
+  border-color: #f0cfd1 !important;
+}
+.employeeSchedules .userAdminGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.employeeSchedules .selectableStaffCard {
+  position: relative;
+  min-height: 124px;
+  padding: 17px;
+  grid-template-columns: 48px 1fr auto;
+  cursor: pointer;
+  transition:
+    border-color 0.22s ease,
+    transform 0.22s ease,
+    box-shadow 0.22s ease;
+  outline: none;
+}
+.employeeSchedules .selectableStaffCard:hover {
+  transform: translateY(-3px);
+  border-color: #9dccd1;
+  box-shadow: 0 16px 32px rgba(8, 68, 81, 0.11);
+}
+.employeeSchedules .selectableStaffCard.selected {
+  border-color: #e8b445;
+  box-shadow:
+    0 0 0 3px rgba(237, 181, 67, 0.15),
+    0 18px 36px rgba(8, 68, 81, 0.12);
+}
+.employeeSchedules .selectableStaffCard.disabledStaff {
+  opacity: 0.67;
+}
+.staffAccessBadge {
+  grid-column: 1/3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #337563;
+  font-size: 7px;
+  font-weight: 900;
+}
+.staffAccessBadge.disabled {
+  color: #a8585c;
+}
+.staffAccessBadge.disabled i {
+  background: #cf666a;
+  box-shadow: none;
+}
+.selectStaffHint {
+  grid-column: 3;
+  color: #8a9ba3;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.6px;
+}
+@keyframes staffPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+html[data-theme="dark"] .movementTrack {
+  stroke: #233943;
+}
+html[data-theme="dark"] .movementRing b {
+  color: #e7f2f5;
+}
+html[data-theme="dark"] .staffOverview article {
+  background: linear-gradient(145deg, #102630, #0d2029);
+  border-color: #29414b;
+}
+html[data-theme="dark"] .staffOverview b {
+  color: #e1edf1;
+}
+html[data-theme="dark"] .staffOverview article > svg {
+  color: #71dcca;
+  background: #173945;
+}
+html[data-theme="dark"] .compactQrStation img {
+  border-color: #29434e;
+}
+html[data-theme="dark"] .siteConfigDisclosure {
+  border-color: #29404a;
+}
+html[data-theme="dark"] .selectedStaffActions > span {
+  color: #72d6bc;
+  background: #14382f;
+}
+
+@media (max-width: 1200px) {
+  .employeeSchedules .userAdminGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .staffOverview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .staffCommandGrid,
+  .employeeSchedules .userAdminGrid,
+  .rosterList {
+    grid-template-columns: 1fr;
+  }
+  .staffOverview {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .staffOverview article {
+    min-height: 74px;
+    padding: 11px;
+    border-radius: 16px;
+  }
+  .staffOverview article > svg {
+    width: 36px;
+    height: 36px;
+    padding: 9px;
+  }
+  .staffOverview b {
+    font-size: 18px;
+  }
+  .compactQrStation {
+    padding: 17px;
+  }
+  .compactQrStation img {
+    width: 138px;
+  }
+  .employeeSchedules,
+  .managerLeaveBoard,
+  .attendanceReports {
+    padding: 16px;
+  }
+  .employeeSchedules .cardHeader {
+    display: block;
+  }
+  .selectedStaffActions {
+    margin-top: 14px;
+    justify-content: flex-start;
+  }
+  .selectedStaffActions .btn {
+    flex: 1;
+    min-width: 92px;
+  }
+  .movementRing {
+    width: 190px;
+    height: 190px;
+  }
+}
 .qrStation {
   text-align: center;
   padding: 25px;

@@ -44,6 +44,7 @@ import {
   Plane,
   Trash2,
   UserX,
+  Download,
 } from "lucide-react";
 import FayezSignature from "@/components/FayezSignature";
 import * as XLSX from "xlsx";
@@ -910,7 +911,7 @@ function Dashboard({ user }) {
     return <>{err ? <div className="notice error">{err}</div> : <Loading />}</>;
   const s = d.snap;
   const total = Number(s.cashIn) + Number(s.cashOut),
-    inShare = total ? (Number(s.cashIn) / total) * 100 : 50;
+    inShare = total ? (Number(s.cashIn) / total) * 100 : 0;
   const monthName = new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
     month: "long",
     year: "numeric",
@@ -981,15 +982,63 @@ function Dashboard({ user }) {
             </div>
             <Bell size={18} />
           </div>
-          <div
-            className="donut"
-            style={{
-              background: `conic-gradient(#2fc6aa 0 ${inShare}%,#f19a62 ${inShare}% 100%)`,
-            }}
-          >
+          <div className="movementRing" aria-label="Today cash movement">
+            <svg viewBox="0 0 120 120" role="img">
+              <defs>
+                <linearGradient
+                  id="movementInGradient"
+                  x1="0"
+                  y1="0"
+                  x2="1"
+                  y2="1"
+                >
+                  <stop offset="0" stopColor="#52e0c3" />
+                  <stop offset="1" stopColor="#159f91" />
+                </linearGradient>
+                <linearGradient
+                  id="movementOutGradient"
+                  x1="0"
+                  y1="0"
+                  x2="1"
+                  y2="1"
+                >
+                  <stop offset="0" stopColor="#ffbd83" />
+                  <stop offset="1" stopColor="#ee7e55" />
+                </linearGradient>
+              </defs>
+              <circle
+                className="movementTrack"
+                cx="60"
+                cy="60"
+                r="46"
+                pathLength="100"
+              />
+              {total > 0 && (
+                <>
+                  <circle
+                    className="movementArc out"
+                    cx="60"
+                    cy="60"
+                    r="46"
+                    pathLength="100"
+                  />
+                  <circle
+                    className="movementArc in"
+                    cx="60"
+                    cy="60"
+                    r="46"
+                    pathLength="100"
+                    strokeDasharray={`${inShare} ${100 - inShare}`}
+                  />
+                </>
+              )}
+            </svg>
             <div>
               <small>TOTAL FLOW</small>
               <b>{money(total)}</b>
+              <span>
+                {total ? `${Math.round(inShare)}% cash in` : "No movement"}
+              </span>
             </div>
           </div>
           <div className="movementLegend">
@@ -3706,6 +3755,7 @@ function AttendanceAdmin() {
     [edit, setEdit] = useState(null),
     [eventEdit, setEventEdit] = useState(null),
     [create, setCreate] = useState(null),
+    [selectedStaffId, setSelectedStaffId] = useState(null),
     [siteEdit, setSiteEdit] = useState(null),
     [filters, setFilters] = useState({
       from: today().slice(0, 8) + "01",
@@ -3797,6 +3847,7 @@ function AttendanceAdmin() {
           ? "Staff access enabled."
           : "Staff access disabled.",
     );
+    if (destructive) setSelectedStaffId(null);
     load();
   }
   async function saveEvent(e) {
@@ -3846,6 +3897,13 @@ function AttendanceAdmin() {
       `<html><head><title>Northfield Attendance QR</title><style>body{font-family:Arial;text-align:center;padding:40px;color:#08243a}img{width:420px;max-width:90%}h1{margin-bottom:5px}p{color:#607585}</style></head><body><h1>Northfield Staff Attendance</h1><p>Scan with your Northfield employee account</p><img src="${qr.image}"/><p>${siteEdit?.siteName || "Northfield Clinic"}</p><script>onload=()=>print()<\/script></body></html>`,
     );
     w.document.close();
+  }
+  function downloadQr() {
+    if (!qr?.image) return;
+    const link = document.createElement("a");
+    link.href = qr.image;
+    link.download = "Northfield-Staff-Attendance-QR.png";
+    link.click();
   }
   function excelReport() {
     const rows = (d.summary || []).map((x) => ({
@@ -4043,6 +4101,27 @@ function AttendanceAdmin() {
     doc.save(`Northfield-Attendance-${filters.from}-${filters.to}.pdf`);
   }
   if (!d) return <Loading />;
+  const selectedStaff = d.staff.find(
+    (u) => String(u.id) === String(selectedStaffId),
+  );
+  const startStaffEdit = (u) =>
+    setEdit({
+      userId: u.id,
+      employeeCode: u.employee_code || "",
+      jobTitle: u.job_title || "Staff",
+      phone: u.phone || "",
+      committedHours: u.committed_hours ?? 48,
+      shiftStart: String(u.shift_start || "09:00").slice(0, 5),
+      shiftEnd: String(u.shift_end || "18:00").slice(0, 5),
+      breakMinutes: 0,
+      graceMinutes: u.grace_minutes ?? 10,
+      workDays: u.work_days || "1,2,3,4,5,6",
+      overtimeRequiresApproval: u.overtime_requires_approval !== false,
+    });
+  const teamOnline = d.today.filter((x) => x.last_event === "CLOCK_IN").length;
+  const pendingLeaves = (d.leaves || []).filter(
+    (x) => x.status === "PENDING",
+  ).length;
   return (
     <>
       <PageHead
@@ -4079,13 +4158,43 @@ function AttendanceAdmin() {
           </div>
         }
       />
-      <div className="attendanceAdminGrid">
-        <section className="card qrStation">
+      <div className="staffOverview">
+        <article>
+          <Users />
+          <span>
+            <small>TOTAL STAFF</small>
+            <b>{d.staff.length}</b>
+          </span>
+        </article>
+        <article>
+          <Wifi />
+          <span>
+            <small>ON SITE NOW</small>
+            <b>{teamOnline}</b>
+          </span>
+        </article>
+        <article>
+          <Plane />
+          <span>
+            <small>PENDING LEAVE</small>
+            <b>{pendingLeaves}</b>
+          </span>
+        </article>
+        <article>
+          <ScanLine />
+          <span>
+            <small>PERIOD SCANS</small>
+            <b>{(d.records || []).length}</b>
+          </span>
+        </article>
+      </div>
+      <div className="attendanceAdminGrid staffCommandGrid">
+        <section className="card qrStation compactQrStation">
           <small>PERMANENT WORKPLACE QR</small>
-          <h3>Scan to clock in or out</h3>
+          <h3>Office attendance code</h3>
           <p>
-            Print this QR once. Every scan requires the employee’s live GPS
-            location.
+            Print once and place it at the entrance. GPS is checked on every
+            scan.
           </p>
           {qr ? (
             <img src={qr.image} alt="Live Northfield attendance QR" />
@@ -4096,71 +4205,82 @@ function AttendanceAdmin() {
             <button className="btn btnPrimary" onClick={printQr}>
               <FileText size={14} /> PRINT QR
             </button>
+            <button className="btn btnSoft" onClick={downloadQr}>
+              <Download size={14} /> DOWNLOAD
+            </button>
           </div>
           {siteEdit && (
-            <form className="siteConfig" onSubmit={saveSite}>
-              <div className="field">
-                <label>Workplace Name</label>
-                <input
-                  value={siteEdit.siteName}
-                  onChange={(e) =>
-                    setSiteEdit({ ...siteEdit, siteName: e.target.value })
-                  }
-                />
-              </div>
-              <div className="siteCoordinates">
+            <details className="siteConfigDisclosure">
+              <summary>
+                <Settings size={14} /> WORKPLACE & GPS SETTINGS
+              </summary>
+              <form className="siteConfig" onSubmit={saveSite}>
                 <div className="field">
-                  <label>Latitude</label>
+                  <label>Workplace Name</label>
                   <input
-                    value={siteEdit.latitude}
+                    value={siteEdit.siteName}
                     onChange={(e) =>
-                      setSiteEdit({ ...siteEdit, latitude: e.target.value })
+                      setSiteEdit({ ...siteEdit, siteName: e.target.value })
                     }
                   />
                 </div>
+                <div className="siteCoordinates">
+                  <div className="field">
+                    <label>Latitude</label>
+                    <input
+                      value={siteEdit.latitude}
+                      onChange={(e) =>
+                        setSiteEdit({ ...siteEdit, latitude: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Longitude</label>
+                    <input
+                      value={siteEdit.longitude}
+                      onChange={(e) =>
+                        setSiteEdit({ ...siteEdit, longitude: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btnSoft"
+                  onClick={useCurrentLocation}
+                >
+                  <ScanLine size={14} /> USE THIS DEVICE LOCATION
+                </button>
                 <div className="field">
-                  <label>Longitude</label>
+                  <label>Allowed Radius (meters)</label>
                   <input
-                    value={siteEdit.longitude}
+                    type="number"
+                    min="20"
+                    value={siteEdit.radiusMeters}
                     onChange={(e) =>
-                      setSiteEdit({ ...siteEdit, longitude: e.target.value })
+                      setSiteEdit({ ...siteEdit, radiusMeters: e.target.value })
                     }
                   />
                 </div>
-              </div>
-              <button
-                type="button"
-                className="btn btnSoft"
-                onClick={useCurrentLocation}
-              >
-                <ScanLine size={14} /> USE THIS DEVICE LOCATION
-              </button>
-              <div className="field">
-                <label>Allowed Radius (meters)</label>
-                <input
-                  type="number"
-                  min="20"
-                  value={siteEdit.radiusMeters}
-                  onChange={(e) =>
-                    setSiteEdit({ ...siteEdit, radiusMeters: e.target.value })
-                  }
-                />
-              </div>
-              <label className="activeToggle">
-                <input
-                  type="checkbox"
-                  checked={siteEdit.blockOutside}
-                  onChange={(e) =>
-                    setSiteEdit({ ...siteEdit, blockOutside: e.target.checked })
-                  }
-                />
-                <span />
-                <b>Block scans outside this radius</b>
-              </label>
-              <button className="btn btnPrimary">
-                SAVE WORKPLACE LOCATION
-              </button>
-            </form>
+                <label className="activeToggle">
+                  <input
+                    type="checkbox"
+                    checked={siteEdit.blockOutside}
+                    onChange={(e) =>
+                      setSiteEdit({
+                        ...siteEdit,
+                        blockOutside: e.target.checked,
+                      })
+                    }
+                  />
+                  <span />
+                  <b>Block scans outside this radius</b>
+                </label>
+                <button className="btn btnPrimary">
+                  SAVE WORKPLACE LOCATION
+                </button>
+              </form>
+            </details>
           )}
         </section>
         <section className="card attendanceRoster">
@@ -4194,15 +4314,63 @@ function AttendanceAdmin() {
       <section className="card employeeSchedules">
         <div className="cardHeader">
           <div>
-            <div className="sectionTitle">Employees & shifts</div>
+            <div className="sectionTitle">Staff directory & shifts</div>
             <div className="sectionSub">
-              Set each employee’s fixed schedule, break and overtime rule.
+              Select an employee to manage schedule, access or account.
             </div>
           </div>
+          {selectedStaff && (
+            <div className="selectedStaffActions">
+              <span>
+                <i /> {selectedStaff.display_name} selected
+              </span>
+              <button
+                className="btn btnSoft"
+                onClick={() => startStaffEdit(selectedStaff)}
+              >
+                <Pencil size={14} /> EDIT SHIFT
+              </button>
+              {selectedStaff.role === "Staff" && (
+                <>
+                  <button
+                    className={`btn ${selectedStaff.active ? "btnWarning" : "btnSuccess"}`}
+                    onClick={() =>
+                      staffAction(
+                        selectedStaff.id,
+                        "staff_toggle",
+                        !selectedStaff.active,
+                      )
+                    }
+                  >
+                    <UserX size={14} />{" "}
+                    {selectedStaff.active ? "DISABLE" : "ENABLE"}
+                  </button>
+                  <button
+                    className="btn btnDanger"
+                    onClick={() =>
+                      staffAction(selectedStaff.id, "staff_delete")
+                    }
+                  >
+                    <Trash2 size={14} /> DELETE
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
         <div className="userAdminGrid">
           {d.staff.map((u) => (
-            <article className="userAdminCard" key={u.id}>
+            <article
+              className={`userAdminCard selectableStaffCard ${String(selectedStaffId) === String(u.id) ? "selected" : ""} ${u.active === false ? "disabledStaff" : ""}`}
+              key={u.id}
+              onClick={() => setSelectedStaffId(u.id)}
+              role="button"
+              tabIndex="0"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ")
+                  setSelectedStaffId(u.id);
+              }}
+            >
               <div className="userAvatar">
                 {String(u.display_name || u.username)[0]}
               </div>
@@ -4215,45 +4383,16 @@ function AttendanceAdmin() {
                 {String(u.shift_start || "09:00").slice(0, 5)} –{" "}
                 {String(u.shift_end || "18:00").slice(0, 5)}
               </div>
-              <button
-                className="editUserButton"
-                onClick={() =>
-                  setEdit({
-                    userId: u.id,
-                    employeeCode: u.employee_code || "",
-                    jobTitle: u.job_title || "Staff",
-                    phone: u.phone || "",
-                    committedHours: u.committed_hours ?? 48,
-                    shiftStart: String(u.shift_start || "09:00").slice(0, 5),
-                    shiftEnd: String(u.shift_end || "18:00").slice(0, 5),
-                    breakMinutes: 0,
-                    graceMinutes: u.grace_minutes ?? 10,
-                    workDays: u.work_days || "1,2,3,4,5,6",
-                    overtimeRequiresApproval:
-                      u.overtime_requires_approval !== false,
-                  })
-                }
+              <div
+                className={`staffAccessBadge ${u.active === false ? "disabled" : "active"}`}
               >
-                <Pencil /> MANAGE SHIFT
-              </button>
-              {u.role === "Staff" && (
-                <div className="staffAccountActions">
-                  <button
-                    className={u.active ? "disable" : "enable"}
-                    onClick={() => staffAction(u.id, "staff_toggle", !u.active)}
-                  >
-                    <UserX />
-                    {u.active ? "DISABLE ACCESS" : "ENABLE ACCESS"}
-                  </button>
-                  <button
-                    className="delete"
-                    onClick={() => staffAction(u.id, "staff_delete")}
-                  >
-                    <Trash2 />
-                    DELETE STAFF
-                  </button>
-                </div>
-              )}
+                <i /> {u.active === false ? "DISABLED" : "ACTIVE"}
+              </div>
+              <span className="selectStaffHint">
+                {String(selectedStaffId) === String(u.id)
+                  ? "SELECTED"
+                  : "SELECT TO MANAGE"}
+              </span>
             </article>
           ))}
         </div>
