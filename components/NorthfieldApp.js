@@ -700,6 +700,9 @@ function CashFlowChart({ days = [] }) {
     }));
   const inPts = pts(incoming),
     outPts = pts(outgoing);
+  const singleDay = days.length === 1,
+    singleBarHeight = (value) =>
+      value > 0 ? Math.max(10, (value / max) * (bottom - top)) : 4;
   const path = (points) =>
     points.length < 2
       ? points[0]
@@ -765,63 +768,124 @@ function CashFlowChart({ days = [] }) {
             style={{ animationDelay: `${i * 55}ms` }}
           />
         ))}
-        <path
-          className="chartAreaReveal"
-          d={`${path(inPts)} L ${right} ${bottom} L ${left} ${bottom} Z`}
-          fill="url(#cashAreaDaily)"
-        />
-        <path
-          pathLength="1"
-          d={path(inPts)}
-          className="cashLine in chartLineDraw"
-          filter="url(#dailyGlow)"
-        />
-        <path
-          pathLength="1"
-          d={path(outPts)}
-          className="cashLine out chartLineDraw chartLineDelay"
-        />
-        {inPts.map((p, i) => (
-          <circle
-            key={`i${i}`}
-            cx={p.x}
-            cy={p.y}
-            r={i === days.length - 1 ? 5 : 3.3}
-            className="chartDot in chartDotReveal"
-            style={{ animationDelay: `${620 + i * 45}ms` }}
-          >
-            <title>
-              {days[i].weekday}, {days[i].business_day} · Cash In: {money(p.v)}
-            </title>
-          </circle>
-        ))}
-        {outPts.map((p, i) => (
-          <circle
-            key={`o${i}`}
-            cx={p.x}
-            cy={p.y}
-            r={i === days.length - 1 ? 4.5 : 3}
-            className="chartDot out chartDotReveal"
-            style={{ animationDelay: `${760 + i * 45}ms` }}
-          >
-            <title>
-              {days[i].weekday}, {days[i].business_day} · Cash Out: {money(p.v)}
-            </title>
-          </circle>
-        ))}
-        {days.map(
-          (d, i) =>
-            showLabel(i) && (
-              <text
-                key={d.business_day}
-                x={left + i * step}
-                y="224"
-                textAnchor="middle"
-              >
-                {d.label}
-              </text>
-            ),
+        {!singleDay && (
+          <>
+            <path
+              className="chartAreaReveal"
+              d={`${path(inPts)} L ${right} ${bottom} L ${left} ${bottom} Z`}
+              fill="url(#cashAreaDaily)"
+            />
+            <path
+              pathLength="1"
+              d={path(inPts)}
+              className="cashLine in chartLineDraw"
+              filter="url(#dailyGlow)"
+            />
+            <path
+              pathLength="1"
+              d={path(outPts)}
+              className="cashLine out chartLineDraw chartLineDelay"
+            />
+          </>
         )}
+        {singleDay && (
+          <g className="singleDayBars">
+            <rect
+              x="246"
+              y={bottom - singleBarHeight(incoming[0])}
+              width="104"
+              height={singleBarHeight(incoming[0])}
+              rx="18"
+              className="singleCashBar in"
+            />
+            <rect
+              x="430"
+              y={bottom - singleBarHeight(outgoing[0])}
+              width="104"
+              height={singleBarHeight(outgoing[0])}
+              rx="18"
+              className="singleCashBar out"
+            />
+            <text
+              x="298"
+              y={bottom - singleBarHeight(incoming[0]) - 12}
+              textAnchor="middle"
+              className="singleBarValue"
+            >
+              {money(incoming[0])}
+            </text>
+            <text
+              x="482"
+              y={bottom - singleBarHeight(outgoing[0]) - 12}
+              textAnchor="middle"
+              className="singleBarValue"
+            >
+              {money(outgoing[0])}
+            </text>
+            <text
+              x="298"
+              y="221"
+              textAnchor="middle"
+              className="singleBarLabel"
+            >
+              CASH IN
+            </text>
+            <text
+              x="482"
+              y="221"
+              textAnchor="middle"
+              className="singleBarLabel"
+            >
+              CASH OUT
+            </text>
+          </g>
+        )}
+        {!singleDay &&
+          inPts.map((p, i) => (
+            <circle
+              key={`i${i}`}
+              cx={p.x}
+              cy={p.y}
+              r={i === days.length - 1 ? 5 : 3.3}
+              className="chartDot in chartDotReveal"
+              style={{ animationDelay: `${620 + i * 45}ms` }}
+            >
+              <title>
+                {days[i].weekday}, {days[i].business_day} · Cash In:{" "}
+                {money(p.v)}
+              </title>
+            </circle>
+          ))}
+        {!singleDay &&
+          outPts.map((p, i) => (
+            <circle
+              key={`o${i}`}
+              cx={p.x}
+              cy={p.y}
+              r={i === days.length - 1 ? 4.5 : 3}
+              className="chartDot out chartDotReveal"
+              style={{ animationDelay: `${760 + i * 45}ms` }}
+            >
+              <title>
+                {days[i].weekday}, {days[i].business_day} · Cash Out:{" "}
+                {money(p.v)}
+              </title>
+            </circle>
+          ))}
+        {!singleDay &&
+          days.map(
+            (d, i) =>
+              showLabel(i) && (
+                <text
+                  key={d.business_day}
+                  x={left + i * step}
+                  y="224"
+                  textAnchor="middle"
+                >
+                  {d.label}
+                </text>
+              ),
+          )}
       </svg>
     </div>
   );

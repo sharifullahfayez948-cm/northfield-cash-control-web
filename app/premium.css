@@ -1302,6 +1302,39 @@ body {
   fill: #8194a0;
   font-weight: 650;
 }
+.singleCashBar {
+  transform-origin: center bottom;
+  animation: singleBarRise 0.72s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.singleCashBar.in {
+  fill: #2fc6aa;
+  filter: drop-shadow(0 8px 12px rgba(47, 198, 170, 0.22));
+}
+.singleCashBar.out {
+  fill: #f19a62;
+  filter: drop-shadow(0 8px 12px rgba(241, 154, 98, 0.2));
+  animation-delay: 0.1s;
+}
+.flowChart .singleBarValue {
+  fill: currentColor;
+  font-size: 13px;
+  font-weight: 900;
+}
+.flowChart .singleBarLabel {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+@keyframes singleBarRise {
+  from {
+    opacity: 0;
+    transform: scaleY(0.05);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
 .movementCard > svg {
   color: #6e8795;
 }
