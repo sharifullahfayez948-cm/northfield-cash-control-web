@@ -17,8 +17,14 @@ export async function GET(){
         where s.status='OPEN' and s.due_date<=current_date+5
         group by s.id having s.statement_balance>coalesce(sum(case when e.status='POSTED' and e.entry_type='PAYMENT' then e.amount else 0 end),0)
         order by s.due_date limit 5`);
-      cardReminders=due.rows.map(row=>{const days=Math.ceil((new Date(`${String(row.due_date).slice(0,10)}T23:59:59`).getTime()-Date.now())/86400000),remaining=Number(row.statement_balance)-Number(row.paid);return {id:`card-due-${row.id}`,event_time:row.created_at,action:"CARD_DUE",entity_type:"credit_card_statement",entity_id:String(row.id),business_date:String(row.due_date).slice(0,10),user_name:"Credit card",detail:`${days<0?"Overdue":days===0?"Due today":`Due in ${days} days`} · AED ${remaining.toFixed(2)} remaining`}});
-    }catch(error){if(error?.code!=="42P01")throw error}
+      cardReminders=due.rows.map(row=>{
+        const days=Math.ceil((new Date(`${String(row.due_date).slice(0,10)}T23:59:59`).getTime()-Date.now())/86400000);
+        const remaining=Number(row.statement_balance)-Number(row.paid);
+        return {id:`card-due-${row.id}`,event_time:row.created_at,action:"CARD_DUE",entity_type:"credit_card_statement",entity_id:String(row.id),business_date:String(row.due_date).slice(0,10),user_name:"Credit card",detail:`${days<0?"Overdue":days===0?"Due today":`Due in ${days} days`} · AED ${remaining.toFixed(2)} remaining`};
+      });
+    }catch(error){
+      if(error?.code!=="42P01") throw error;
+    }
     return ok({notifications:[...cardReminders,...result.rows]});
   }catch(e){return fail(e.message,e.message==="UNAUTHORIZED"?401:500)}
 }
