@@ -8387,3 +8387,45 @@ html[data-theme="dark"] .creditReminder{color:#e6c573;border-color:#5b4728;backg
 @media(max-width:900px){.creditHero{grid-template-columns:1fr}.creditFigures{width:100%}.creditCommandBar{grid-template-columns:1fr}.statementStrip{grid-template-columns:1fr 1fr}.statementStatus{justify-self:start}.creditReportControls{grid-template-columns:1fr 1fr}.creditMiniTable>div{grid-template-columns:90px 95px 1fr 105px}}
 @media(max-width:650px){.creditHero{min-height:0;padding:20px;border-radius:21px}.creditIdentity>span{width:53px;height:53px;border-radius:17px}.creditIdentity h3{font-size:18px}.creditFigures{grid-template-columns:1fr}.creditFigures>div{padding:11px 13px;border-left:0;border-top:1px solid rgba(255,255,255,.1)}.creditFigures>div:first-child{border-top:0}.creditCommandBar button{min-height:61px}.statementStrip{grid-template-columns:1fr 1fr;padding:13px}.statementStrip>div{border:0}.creditLedger{padding:14px}.creditRows>button{grid-template-columns:40px 1fr}.creditRows strong{grid-column:2}.creditModal{width:calc(100vw - 18px);max-height:calc(100vh - 18px);border-radius:21px}.creditForm{grid-template-columns:1fr}.creditForm .field{grid-column:1!important}.creditReportControls{grid-template-columns:1fr}.creditReportSummary{grid-template-columns:1fr}.creditMiniTable>div{grid-template-columns:82px 1fr auto}.creditMiniTable>div span:nth-child(3){display:none}.creditSetup{padding:20px;align-items:flex-start;flex-wrap:wrap}.creditSetup .btn{width:100%;margin:0;justify-content:center}.creditDetail{grid-template-columns:1fr}}
 
+
+/* Report period picker: quick presets on top, editable From/To below */
+.reportCommand {
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+.periodSwitch.periodPresets {
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-self: start;
+}
+.reportDates .rangeField {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.reportDates .rangeField input {
+  min-width: 165px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.reportDates .rangeField input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+}
+html[data-theme="dark"] .reportDates .rangeField input::-webkit-calendar-picker-indicator {
+  filter: invert(0.85);
+}
+@media (max-width: 750px) {
+  .periodSwitch.periodPresets {
+    grid-template-columns: repeat(4, 1fr);
+    justify-self: stretch;
+  }
+  .reportDates .rangeField {
+    grid-column: auto;
+    display: flex;
+  }
+  .reportDates .rangeField input {
+    min-width: 0;
+  }
+}

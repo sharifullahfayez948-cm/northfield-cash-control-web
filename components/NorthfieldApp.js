@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   LayoutDashboard,
   PlusCircle,
@@ -2694,41 +2694,73 @@ function InstallApp() {
     </>
   );
 }
-function reportRange(period, anchor) {
-  const d = new Date(`${anchor}T00:00:00`),
-    y = d.getFullYear(),
-    m = d.getMonth();
-  if (period === "daily") return [anchor, anchor];
-  if (period === "yearly") return [`${y}-01-01`, `${y}-12-31`];
-  return [
-    new Date(y, m, 1).toISOString().slice(0, 10),
-    new Date(y, m + 1, 0).toISOString().slice(0, 10),
-  ];
+// Local calendar date (YYYY-MM-DD). toISOString() would shift to UTC and,
+// in Dubai, turn the 1st of the month into the last day of the previous one.
+const localYmd = (dt) =>
+  `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+const REPORT_PERIODS = [
+  ["today", "Today"],
+  ["yesterday", "Yesterday"],
+  ["thisWeek", "This Week"],
+  ["lastWeek", "Last Week"],
+  ["thisMonth", "This Month"],
+  ["lastMonth", "Last Month"],
+  ["thisYear", "This Year"],
+  ["custom", "Custom"],
+];
+function reportRange(key) {
+  const now = new Date(),
+    y = now.getFullYear(),
+    m = now.getMonth(),
+    day = now.getDate(),
+    D = (yy, mm, dd) => localYmd(new Date(yy, mm, dd)),
+    monday = day - ((now.getDay() + 6) % 7);
+  switch (key) {
+    case "today":
+      return [D(y, m, day), D(y, m, day)];
+    case "yesterday":
+      return [D(y, m, day - 1), D(y, m, day - 1)];
+    case "thisWeek":
+      return [D(y, m, monday), D(y, m, day)];
+    case "lastWeek":
+      return [D(y, m, monday - 7), D(y, m, monday - 1)];
+    case "lastMonth":
+      return [D(y, m - 1, 1), D(y, m, 0)];
+    case "thisYear":
+      return [D(y, 0, 1), D(y, m, day)];
+    default:
+      return [D(y, m, 1), D(y, m, day)];
+  }
 }
 function ReportsV2() {
   const [scope, setScope] = useState("cash"),
-    [period, setPeriod] = useState("monthly"),
-    [anchor, setAnchor] = useState(today()),
-    [from, setFrom] = useState(new Date().toISOString().slice(0, 8) + "01"),
-    [to, setTo] = useState(today()),
+    [period, setPeriod] = useState("thisMonth"),
+    [from, setFrom] = useState(() => reportRange("thisMonth")[0]),
+    [to, setTo] = useState(() => reportRange("thisMonth")[1]),
     [d, setD] = useState(),
     [busy, setBusy] = useState(false);
+  const periodLabel =
+    period === "custom"
+      ? "Custom Period"
+      : REPORT_PERIODS.find((p) => p[0] === period)?.[1] || "Period";
   const names = {
     cash: "Cash Transactions",
     closing: "Daily Closing",
     bank: "Emirates Islamic",
     transfer: "Iran / Dubai",
   };
+  const loadSeq = useRef(0);
   async function load(nextScope = scope, nextFrom = from, nextTo = to) {
+    const seq = ++loadSeq.current;
     setBusy(true);
     try {
-      setD(
-        await api(
-          `/api/reports?scope=${nextScope}&from=${nextFrom}&to=${nextTo}`,
-        ),
+      const res = await api(
+        `/api/reports?scope=${nextScope}&from=${nextFrom}&to=${nextTo}`,
       );
+      // ignore answers from an older request that finished late
+      if (seq === loadSeq.current) setD(res);
     } finally {
-      setBusy(false);
+      if (seq === loadSeq.current) setBusy(false);
     }
   }
   useEffect(() => {
@@ -2736,7 +2768,8 @@ function ReportsV2() {
   }, []);
   function choosePeriod(p) {
     setPeriod(p);
-    const [a, b] = reportRange(p, anchor);
+    if (p === "custom") return;
+    const [a, b] = reportRange(p);
     setFrom(a);
     setTo(b);
     load(scope, a, b);
@@ -2745,11 +2778,19 @@ function ReportsV2() {
     setScope(s);
     load(s, from, to);
   }
-  function changeAnchor(value) {
-    setAnchor(value);
-    const [a, b] = reportRange(period, value);
+  function changeDate(which, value) {
+    if (!value) return;
+    let a = which === "from" ? value : from,
+      b = which === "to" ? value : to;
+    // keep the range valid: moving one end past the other moves both
+    if (a > b) {
+      if (which === "from") b = a;
+      else a = b;
+    }
+    setPeriod("custom");
     setFrom(a);
     setTo(b);
+    load(scope, a, b);
   }
   function excel() {
     const wb = XLSX.utils.book_new(),
@@ -2797,7 +2838,7 @@ function ReportsV2() {
     XLSX.writeFile(wb, `Northfield_${scope}_${period}_${from}_${to}.xlsx`);
     pushToast("Professional Excel workbook downloaded successfully.");
   }
-  async function cashDailyPdf() {
+  async function cashDailyPdf({ orientation = "portrait", lang = "en" } = {}) {
     const settings = await fetch("/api/public-settings", {
       cache: "no-store",
     }).then((r) => r.json());
@@ -2806,7 +2847,108 @@ function ReportsV2() {
       imageData(logoUrl),
       imageData(logoUrl, 0.04),
     ]);
-    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const doc = new jsPDF({ orientation, unit: "mm", format: "a4" });
+    const fa = lang === "fa",
+      P = orientation === "portrait";
+    let F = "helvetica";
+    if (fa) {
+      const b64 = async (url) => {
+        const buf = new Uint8Array(
+          await (await fetch(url)).arrayBuffer(),
+        );
+        let s = "";
+        for (let i = 0; i < buf.length; i += 0x8000)
+          s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+        return btoa(s);
+      };
+      const [reg, bold] = await Promise.all([
+        b64("/fonts/persian-regular.ttf"),
+        b64("/fonts/persian-bold.ttf"),
+      ]);
+      doc.addFileToVFS("persian-regular.ttf", reg);
+      doc.addFont("persian-regular.ttf", "Persian", "normal");
+      doc.addFileToVFS("persian-bold.ttf", bold);
+      doc.addFont("persian-bold.ttf", "Persian", "bold");
+      F = "Persian";
+    }
+    // Joins text parts in reading order; jsPDF handles right-to-left layout itself.
+    const J = (...p) => p.filter((x) => x !== "" && x != null).join(fa ? "  " : " ");
+    const T = fa
+      ? {
+          title: "گزارش روزانه صندوق",
+          sub: "موجودی اول روز · ورود و خروج · موجودی آخر روز",
+          opening: "موجودی اول دوره",
+          totalIn: "جمع دریافتی",
+          totalOut: "جمع پرداختی",
+          closing: "موجودی آخر دوره",
+          startOf: (x) => J("ابتدای", x),
+          allIn: "همه دریافتی‌های ثبت‌شده",
+          allOut: "همه پرداختی‌های ثبت‌شده",
+          carried: "منتقل به روز بعد",
+          flow: "گردش صندوق روز به روز",
+          flowNote: "هر روز با موجودی آخرِ روزِ قبل باز می‌شود",
+          sumHead: ["تاریخ", "وضعیت روز", "موجودی اول", "دریافتی", "پرداختی", "موجودی آخر", "منتقل به"],
+          detHead: ["ساعت", "نوع", "دسته", "طرف حساب", "شرح", "مرجع", "دریافتی", "پرداختی", "مانده"],
+          closed: "بسته",
+          open: "باز",
+          dayClosed: "روز بسته شده",
+          dayOpen: "روز باز",
+          days: (n) => J(String(n), "روز کاری"),
+          nextDay: "روز بعد",
+          to: (x) => x,
+          openRow: (x) =>
+            x ? J("موجودی اول روز", "—", "منتقل‌شده از", x) : "موجودی اول روز",
+          noMoves: "در این روز تراکنش نقدی ثبت نشده است",
+          dayTotal: "جمع روز",
+          variance: (e, c, v) =>
+            J("مانده حساب‌شده", e, "·", "شمارش‌شده", c, "·", "اختلاف", v),
+          closeRow: (x) =>
+            x
+              ? J("موجودی آخر روز", "·", "منتقل به", x)
+              : J("موجودی آخر روز", "·", "منتقل به روز کاری بعد"),
+          IN: "دریافت",
+          OUT: "پرداخت",
+          aedPrefix: "درهم",
+          conf: "سند محرمانه کنترل صندوق",
+          gen: "تهیه شده",
+          page: "صفحه",
+        }
+      : {
+          title: "DAILY CASH REPORT",
+          sub: "OPENING  ·  MOVEMENTS  ·  CLOSING",
+          opening: "OPENING CASH",
+          totalIn: "TOTAL CASH IN",
+          totalOut: "TOTAL CASH OUT",
+          closing: "CLOSING CASH",
+          startOf: (x) => `Start of ${x}`,
+          allIn: "All posted receipts",
+          allOut: "All posted payments",
+          carried: "Carried forward",
+          flow: "DAY-BY-DAY CASH FLOW",
+          flowNote: "Each day opens with the cash carried forward from the previous day.",
+          sumHead: ["DATE", "DAY STATUS", "OPENING", "CASH IN", "CASH OUT", "CLOSING", "CARRIED TO"],
+          detHead: ["TIME", "TYPE", "CATEGORY", "COUNTERPARTY", "DESCRIPTION", "REFERENCE", "CASH IN", "CASH OUT", "BALANCE"],
+          closed: "CLOSED",
+          open: "OPEN",
+          dayClosed: "DAY CLOSED",
+          dayOpen: "DAY OPEN",
+          days: (n) => `${n} BUSINESS DAYS`,
+          nextDay: "next day",
+          to: (x) => `to ${x}`,
+          openRow: (x) => `OPENING CASH${x ? `   (brought forward from ${x})` : ""}`,
+          noMoves: "No cash movements recorded on this day.",
+          dayTotal: "DAY TOTAL",
+          variance: (e, c, v) => `EXPECTED ${e}   ·   COUNTED ${c}   ·   VARIANCE ${v}`,
+          closeRow: (x) => `CLOSING CASH   ·   carried forward to ${x || "the next business day"}`,
+          IN: "IN",
+          OUT: "OUT",
+          aedPrefix: "AED",
+          conf: "CONFIDENTIAL CASH CONTROL RECORD",
+          gen: "Generated",
+          page: "PAGE",
+        };
+    if (P && !fa)
+      T.detHead = ["TIME", "TYPE", "CATEGORY", "PARTY", "DESCRIPTION", "REF.", "CASH IN", "CASH OUT", "BALANCE"];
     const W = doc.internal.pageSize.getWidth(),
       H = doc.internal.pageSize.getHeight(),
       M = 12;
@@ -2821,30 +2963,48 @@ function ReportsV2() {
       RED = [184, 62, 52],
       INK = [33, 52, 64],
       MUTED = [120, 134, 142];
+    const fs = (n) => (P ? n * 0.86 : n);
     const aed = (n) =>
       Number(n || 0).toLocaleString("en-US", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
+    const money = (n) => `AED ${aed(n)}`;
+    const locale = fa ? "fa-IR-u-ca-gregory-nu-latn" : "en-GB";
+    // Persian reading order is always weekday, day, month, year.
+    const fparts = (k, o) => {
+      const m = Object.fromEntries(
+        new Intl.DateTimeFormat(locale, o)
+          .formatToParts(new Date(`${k}T00:00:00`))
+          .map((p) => [p.type, p.value]),
+      );
+      return ["weekday", "day", "month", "year"].filter((t) => m[t]).map((t) => m[t]);
+    };
     const dayTitle = (k) => {
-      const dt = new Date(`${k}T00:00:00`);
-      return dt
-        .toLocaleDateString("en-GB", {
-          weekday: "long",
-          day: "2-digit",
-          month: "long",
-          year: "numeric",
-        })
-        .toUpperCase();
+      if (fa)
+        return J(...fparts(k, { weekday: "long", day: "2-digit", month: "long", year: "numeric" }));
+      const t = new Date(`${k}T00:00:00`).toLocaleDateString(locale, {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      });
+      return fa ? t : t.toUpperCase();
     };
     const shortDay = (k) =>
-      k
-        ? new Date(`${k}T00:00:00`).toLocaleDateString("en-GB", {
+      k && fa
+        ? J(...fparts(k, { day: "2-digit", month: "short", year: "numeric" }))
+        : k
+        ? new Date(`${k}T00:00:00`).toLocaleDateString(locale, {
             day: "2-digit",
             month: "short",
             year: "numeric",
           })
         : "";
+    // right-to-left helpers: mirror column order and alignment for Persian
+    const row = (cells) => (fa ? [...cells].reverse() : cells);
+    const al = (h) => (fa ? (h === "right" ? "left" : h === "center" ? "center" : "right") : h);
+    const X = (x, w = 0) => (fa ? W - x - w : x);
     const days = d.days || [],
       s = d.summary || {};
     const byDay = {};
@@ -2863,7 +3023,7 @@ function ReportsV2() {
     const chrome = (pageNumber) => {
       doc.setFillColor(...IVORY);
       doc.rect(0, 0, W, H, "F");
-      doc.addImage(watermark, "PNG", W / 2 - 60, H / 2 - 28, 120, 56);
+      doc.addImage(watermark, "PNG", W / 2 - 55, H / 2 - 26, 110, 52);
       doc.setDrawColor(...GOLD);
       doc.setLineWidth(0.6);
       doc.roundedRect(6, 6, W - 12, H - 12, 2.5, 2.5);
@@ -2874,179 +3034,190 @@ function ReportsV2() {
       doc.roundedRect(M, 12, W - M * 2, 24, 1.8, 1.8, "F");
       doc.setFillColor(...GOLD);
       doc.rect(M, 35, W - M * 2, 0.9, "F");
+      const lw = P ? 34 : 40;
       doc.setFillColor(255, 255, 255);
-      doc.roundedRect(M + 3, 14.5, 40, 19, 1.4, 1.4, "F");
-      doc.addImage(logo, "PNG", M + 4.5, 15.5, 37, 17);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(15);
+      doc.roundedRect(X(M + 3, lw), 14.5, lw, 19, 1.4, 1.4, "F");
+      doc.addImage(logo, "PNG", X(M + 4.5, lw - 3), 15.5, lw - 3, 17);
+      const cx = W / 2;
+      doc.setFont(F, "bold");
+      doc.setFontSize(P ? 10 : 15);
       doc.setTextColor(255, 255, 255);
-      doc.text(company.toUpperCase(), W / 2, 22.5, { align: "center" });
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
+      doc.text(company.toUpperCase(), cx, 22.5, { align: "center", maxWidth: P ? 96 : 140 });
+      doc.setFont(F, "normal");
+      doc.setFontSize(P ? 6.8 : 8);
       doc.setTextColor(214, 196, 160);
-      doc.text(address, W / 2, 29, { align: "center" });
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
+      doc.text(address, cx, 29, { align: "center", maxWidth: P ? 78 : 140 });
+      const rx = fa ? M + 4 : W - M - 4,
+        ra = fa ? "left" : "right";
+      doc.setFont(F, "bold");
+      doc.setFontSize(P ? 9.5 : 11);
       doc.setTextColor(...GOLD);
-      doc.text("DAILY CASH REPORT", W - M - 4, 20.5, { align: "right" });
-      doc.setFontSize(8);
+      doc.text(T.title, rx, 20.5, { align: ra });
+      doc.setFontSize(P ? 6.8 : 8);
       doc.setTextColor(255, 255, 255);
-      doc.text("OPENING  ·  MOVEMENTS  ·  CLOSING", W - M - 4, 26, {
-        align: "right",
-      });
-      doc.setFont("helvetica", "normal");
+      doc.text(T.sub, rx, 26, { align: ra });
+      doc.setFont(F, "normal");
       doc.setTextColor(214, 196, 160);
-      doc.text(`${shortDay(from)}  —  ${shortDay(to)}`, W - M - 4, 31.5, {
-        align: "right",
-      });
+      doc.text(
+        fa ? J("از", shortDay(from), "تا", shortDay(to)) : `${shortDay(from)}  —  ${shortDay(to)}`,
+        rx,
+        31.5,
+        { align: ra },
+      );
       // footer
       doc.setDrawColor(...GOLD);
       doc.setLineWidth(0.3);
       doc.line(M, H - 15, W - M, H - 15);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
+      doc.setFont(F, "normal");
+      doc.setFontSize(P ? 6.4 : 7.5);
       doc.setTextColor(...MUTED);
       doc.text(
-        `Generated ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai" })} (Dubai)`,
-        M,
+        J(T.gen, new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai" })),
+        fa ? W - M : M,
         H - 10.5,
+        { align: fa ? "right" : "left" },
       );
       doc.setTextColor(...GOLD);
-      doc.setFont("helvetica", "bold");
+      doc.setFont(F, "bold");
       doc.text(
-        `${company.toUpperCase()}  ·  CONFIDENTIAL CASH CONTROL RECORD`,
+        fa ? T.conf : `${company.toUpperCase()}  ·  ${T.conf}`,
         W / 2,
         H - 10.5,
         { align: "center" },
       );
       doc.setTextColor(...NAVY);
-      doc.text(`PAGE ${pageNumber}`, W - M, H - 10.5, { align: "right" });
+      doc.text(J(T.page, String(pageNumber)), fa ? M : W - M, H - 10.5, {
+        align: fa ? "left" : "right",
+      });
     };
 
     // ---------- page 1: KPI cards + day-by-day summary ----------
     chromeOnce();
     const cards = [
-      ["OPENING CASH", s.opening_cash, NAVY2, `Start of ${shortDay(days[0]?.date || from)}`],
-      ["TOTAL CASH IN", s.total_in, GREEN, "All posted receipts"],
-      ["TOTAL CASH OUT", s.total_out, RED, "All posted payments"],
-      ["CLOSING CASH", s.running_cash, GOLD, "Carried forward"],
+      [T.opening, s.opening_cash, NAVY2, T.startOf(shortDay(days[0]?.date || from))],
+      [T.totalIn, s.total_in, GREEN, T.allIn],
+      [T.totalOut, s.total_out, RED, T.allOut],
+      [T.closing, s.running_cash, GOLD, T.carried],
     ];
-    const gap = 4,
+    const gap = P ? 3 : 4,
       cw = (W - M * 2 - gap * 3) / 4,
       cy = 42;
     cards.forEach(([label, value, color, note], i) => {
-      const x = M + i * (cw + gap);
+      const x = X(M + i * (cw + gap), cw);
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(228, 216, 192);
       doc.setLineWidth(0.3);
       doc.roundedRect(x, cy, cw, 27, 2, 2, "FD");
       doc.setFillColor(...color);
-      doc.roundedRect(x, cy, 2.4, 27, 1.2, 1.2, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5);
+      doc.roundedRect(fa ? x + cw - 2.4 : x, cy, 2.4, 27, 1.2, 1.2, "F");
+      const tx = fa ? x + cw - 6 : x + 6,
+        ta = fa ? "right" : "left";
+      doc.setFont(F, "bold");
+      doc.setFontSize(P ? 7.2 : 8.5);
       doc.setTextColor(...MUTED);
-      doc.text(label, x + 7, cy + 8);
-      doc.setFontSize(16);
+      doc.text(label, tx, cy + 8, { align: ta });
+      doc.setFontSize(P ? 12.5 : 16);
       doc.setTextColor(...color);
-      doc.text(`AED ${aed(value)}`, x + 7, cy + 18);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
+      doc.text(money(value), tx, cy + 18, { align: ta });
+      doc.setFont(F, "normal");
+      doc.setFontSize(P ? 6.4 : 7.5);
       doc.setTextColor(...MUTED);
-      doc.text(note, x + 7, cy + 23.5);
+      doc.text(note, tx, cy + 23.5, { align: ta });
     });
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
+    doc.setFont(F, "bold");
+    doc.setFontSize(P ? 10 : 11);
     doc.setTextColor(...NAVY);
-    doc.text("DAY-BY-DAY CASH FLOW", M, 79);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
+    doc.text(T.flow, fa ? W - M : M, 79, { align: fa ? "right" : "left" });
+    doc.setFont(F, "normal");
+    doc.setFontSize(P ? 7 : 8);
     doc.setTextColor(...MUTED);
-    doc.text(
-      "Each day opens with the cash carried forward from the previous day.",
-      M + 52,
-      79,
-    );
+    doc.text(T.flowNote, fa ? M : W - M, 79, { align: fa ? "left" : "right" });
 
     const tableBase = {
       theme: "grid",
       margin: { top: 42, left: M, right: M, bottom: 19 },
       willDrawPage: chromeOnce,
       styles: {
-        font: "helvetica",
-        fontSize: 8.6,
+        font: F,
+        fontSize: fs(8.6),
         textColor: INK,
         lineColor: [226, 222, 212],
         lineWidth: 0.2,
-        cellPadding: { top: 2.2, bottom: 2.2, left: 2.6, right: 2.6 },
+        cellPadding: P
+          ? { top: 1.9, bottom: 1.9, left: 1.8, right: 1.8 }
+          : { top: 2.2, bottom: 2.2, left: 2.6, right: 2.6 },
         valign: "middle",
         overflow: "linebreak",
         fillColor: [255, 255, 255],
+        halign: al("left"),
       },
       headStyles: {
         fillColor: NAVY,
         textColor: GOLD,
         fontStyle: "bold",
-        fontSize: 8.4,
+        fontSize: fs(8.4),
         lineColor: NAVY,
-        cellPadding: 2.8,
+        cellPadding: P ? 2.2 : 2.8,
+        halign: al("left"),
       },
     };
 
     autoTable(doc, {
       ...tableBase,
       startY: 83,
-      head: [
-        ["DATE", "DAY STATUS", "OPENING", "CASH IN", "CASH OUT", "CLOSING", "CARRIED TO"],
-      ],
-      body: days.map((x, i) => [
-        { content: shortDay(x.date), styles: { fontStyle: "bold", textColor: NAVY } },
-        {
-          content: x.status === "FINALIZED" ? "CLOSED" : "OPEN",
-          styles: {
-            halign: "center",
-            fontStyle: "bold",
-            textColor: x.status === "FINALIZED" ? GREEN : GOLD,
+      head: [row(T.sumHead)],
+      body: days.map((x, i) =>
+        row([
+          { content: shortDay(x.date), styles: { fontStyle: "bold", textColor: NAVY } },
+          {
+            content: x.status === "FINALIZED" ? T.closed : T.open,
+            styles: {
+              halign: "center",
+              fontStyle: "bold",
+              textColor: x.status === "FINALIZED" ? GREEN : GOLD,
+            },
           },
-        },
-        { content: aed(x.opening), styles: { halign: "right" } },
-        {
-          content: x.cash_in ? `+ ${aed(x.cash_in)}` : "—",
-          styles: { halign: "right", textColor: GREEN, fontStyle: "bold" },
-        },
-        {
-          content: x.cash_out ? `- ${aed(x.cash_out)}` : "—",
-          styles: { halign: "right", textColor: RED, fontStyle: "bold" },
-        },
-        {
-          content: aed(x.closing),
-          styles: {
-            halign: "right",
-            fontStyle: "bold",
-            textColor: x.closing < 0 ? RED : NAVY,
-            fillColor: GOLD_SOFT,
+          { content: aed(x.opening), styles: { halign: al("right") } },
+          {
+            content: x.cash_in ? `+ ${aed(x.cash_in)}` : "—",
+            styles: { halign: al("right"), textColor: GREEN, fontStyle: "bold" },
           },
-        },
-        {
-          content: days[i + 1] ? `to ${shortDay(days[i + 1].date)}` : "next day",
-          styles: { textColor: MUTED, halign: "center" },
-        },
-      ]),
+          {
+            content: x.cash_out ? `- ${aed(x.cash_out)}` : "—",
+            styles: { halign: al("right"), textColor: RED, fontStyle: "bold" },
+          },
+          {
+            content: aed(x.closing),
+            styles: {
+              halign: al("right"),
+              fontStyle: "bold",
+              textColor: x.closing < 0 ? RED : NAVY,
+              fillColor: GOLD_SOFT,
+            },
+          },
+          {
+            content: days[i + 1] ? T.to(shortDay(days[i + 1].date)) : T.nextDay,
+            styles: { textColor: MUTED, halign: "center" },
+          },
+        ]),
+      ),
       foot: [
-        [
-          { content: `${days.length} BUSINESS DAYS`, colSpan: 2 },
-          { content: aed(s.opening_cash), styles: { halign: "right" } },
-          { content: `+ ${aed(s.total_in)}`, styles: { halign: "right" } },
-          { content: `- ${aed(s.total_out)}`, styles: { halign: "right" } },
-          { content: aed(s.running_cash), styles: { halign: "right" } },
+        row([
+          { content: T.days(days.length), colSpan: 2 },
+          { content: aed(s.opening_cash), styles: { halign: al("right") } },
+          { content: `+ ${aed(s.total_in)}`, styles: { halign: al("right") } },
+          { content: `- ${aed(s.total_out)}`, styles: { halign: al("right") } },
+          { content: aed(s.running_cash), styles: { halign: al("right") } },
           "",
-        ],
+        ]),
       ],
       footStyles: {
         fillColor: NAVY,
         textColor: [255, 255, 255],
         fontStyle: "bold",
-        fontSize: 9,
+        fontSize: fs(9),
+        halign: al("left"),
       },
       alternateRowStyles: { fillColor: [250, 248, 243] },
     });
@@ -3061,131 +3232,146 @@ function ReportsV2() {
         next = days[i + 1];
       body.push([
         {
-          content: `${dayTitle(day.date)}     ·     DAY ${day.status === "FINALIZED" ? "CLOSED" : "OPEN"}`,
+          content: fa
+            ? J(dayTitle(day.date), "·", day.status === "FINALIZED" ? T.dayClosed : T.dayOpen)
+            : `${dayTitle(day.date)}     ·     ${day.status === "FINALIZED" ? T.dayClosed : T.dayOpen}`,
           colSpan: NCOL,
           styles: {
             fillColor: NAVY,
             textColor: [255, 255, 255],
             fontStyle: "bold",
-            fontSize: 10,
-            cellPadding: { top: 3.4, bottom: 3.4, left: 4, right: 4 },
+            fontSize: fs(10),
+            cellPadding: { top: 3.2, bottom: 3.2, left: 4, right: 4 },
           },
         },
       ]);
-      body.push([
-        {
-          content: `OPENING CASH${prev ? `   (brought forward from ${shortDay(prev.date)})` : ""}`,
-          colSpan: 8,
-          styles: { fillColor: [232, 240, 246], fontStyle: "bold", textColor: NAVY2 },
-        },
-        {
-          content: aed(day.opening),
-          styles: {
-            fillColor: [232, 240, 246],
-            fontStyle: "bold",
-            halign: "right",
-            textColor: NAVY2,
+      body.push(
+        row([
+          {
+            content: T.openRow(prev ? shortDay(prev.date) : ""),
+            colSpan: 8,
+            styles: { fillColor: [232, 240, 246], fontStyle: "bold", textColor: NAVY2 },
           },
-        },
-      ]);
+          {
+            content: aed(day.opening),
+            styles: {
+              fillColor: [232, 240, 246],
+              fontStyle: "bold",
+              halign: al("right"),
+              textColor: NAVY2,
+            },
+          },
+        ]),
+      );
       let bal = day.opening;
       for (const e of byDay[day.date] || []) {
         const posted = e.status === "POSTED",
           isIn = e.type === "IN";
         if (posted) bal += isIn ? Number(e.amount) : -Number(e.amount);
         const dim = posted ? {} : { textColor: [170, 170, 170], fontStyle: "italic" };
-        body.push([
-          { content: pdfTime(e.time), styles: { textColor: MUTED, ...dim } },
-          {
-            content: posted ? e.type : `${e.type} · ${e.status}`,
-            styles: {
-              fontStyle: "bold",
-              halign: "center",
-              textColor: isIn ? GREEN : RED,
-              ...dim,
+        const typeLabel = isIn ? T.IN : T.OUT;
+        body.push(
+          row([
+            { content: pdfTime(e.time), styles: { textColor: MUTED, ...dim } },
+            {
+              content: posted ? typeLabel : `${typeLabel} · ${e.status}`,
+              styles: {
+                fontStyle: "bold",
+                halign: "center",
+                textColor: isIn ? GREEN : RED,
+                ...dim,
+              },
             },
-          },
-          { content: e.category || "", styles: dim },
-          { content: e.counterparty || "", styles: dim },
-          { content: e.description || "", styles: dim },
-          { content: e.reference || "", styles: { textColor: MUTED, ...dim } },
-          {
-            content: isIn ? aed(e.amount) : "",
-            styles: { halign: "right", textColor: GREEN, fontStyle: "bold", ...dim },
-          },
-          {
-            content: isIn ? "" : aed(e.amount),
-            styles: { halign: "right", textColor: RED, fontStyle: "bold", ...dim },
-          },
-          {
-            content: aed(Math.round(bal * 100) / 100),
-            styles: {
-              halign: "right",
-              textColor: bal < 0 ? RED : NAVY,
-              fillColor: [250, 248, 243],
-              ...dim,
+            { content: e.category || "", styles: dim },
+            { content: e.counterparty || "", styles: dim },
+            { content: e.description || "", styles: dim },
+            { content: e.reference || "", styles: { textColor: MUTED, ...dim } },
+            {
+              content: isIn ? aed(e.amount) : "",
+              styles: { halign: al("right"), textColor: GREEN, fontStyle: "bold", ...dim },
             },
-          },
-        ]);
+            {
+              content: isIn ? "" : aed(e.amount),
+              styles: { halign: al("right"), textColor: RED, fontStyle: "bold", ...dim },
+            },
+            {
+              content: aed(Math.round(bal * 100) / 100),
+              styles: {
+                halign: al("right"),
+                textColor: bal < 0 ? RED : NAVY,
+                fillColor: [250, 248, 243],
+                ...dim,
+              },
+            },
+          ]),
+        );
       }
       if (!(byDay[day.date] || []).length)
         body.push([
           {
-            content: "No cash movements recorded on this day.",
+            content: T.noMoves,
             colSpan: NCOL,
             styles: { textColor: MUTED, fontStyle: "italic", halign: "center" },
           },
         ]);
-      body.push([
-        {
-          content: "DAY TOTAL",
-          colSpan: 6,
-          styles: { fontStyle: "bold", halign: "right", textColor: NAVY },
-        },
-        {
-          content: `+ ${aed(day.cash_in)}`,
-          styles: { halign: "right", fontStyle: "bold", textColor: GREEN },
-        },
-        {
-          content: `- ${aed(day.cash_out)}`,
-          styles: { halign: "right", fontStyle: "bold", textColor: RED },
-        },
-        { content: "" },
-      ]);
+      body.push(
+        row([
+          {
+            content: T.dayTotal,
+            colSpan: 6,
+            styles: { fontStyle: "bold", halign: al("right"), textColor: NAVY },
+          },
+          {
+            content: `+ ${aed(day.cash_in)}`,
+            styles: { halign: al("right"), fontStyle: "bold", textColor: GREEN },
+          },
+          {
+            content: `- ${aed(day.cash_out)}`,
+            styles: { halign: al("right"), fontStyle: "bold", textColor: RED },
+          },
+          { content: "" },
+        ]),
+      );
       if (day.counted != null && Math.abs(day.variance) >= 0.01)
         body.push([
           {
-            content: `EXPECTED ${aed(day.expected)}   ·   COUNTED ${aed(day.counted)}   ·   VARIANCE ${day.variance > 0 ? "+" : ""}${aed(day.variance)}`,
+            content: T.variance(
+              aed(day.expected),
+              aed(day.counted),
+              `${day.variance > 0 ? "+" : ""}${aed(day.variance)}`,
+            ),
             colSpan: NCOL,
             styles: {
-              halign: "right",
+              halign: al("right"),
               fontStyle: "bold",
               textColor: day.variance < 0 ? RED : GREEN,
             },
           },
         ]);
-      body.push([
-        {
-          content: `CLOSING CASH   ·   carried forward to ${next ? shortDay(next.date) : "the next business day"}`,
-          colSpan: 8,
-          styles: {
-            fillColor: GOLD_SOFT,
-            fontStyle: "bold",
-            fontSize: 9.4,
-            textColor: [120, 82, 20],
+      body.push(
+        row([
+          {
+            content: T.closeRow(next ? shortDay(next.date) : ""),
+            colSpan: 8,
+            styles: {
+              fillColor: GOLD_SOFT,
+              fontStyle: "bold",
+              fontSize: fs(9.4),
+              textColor: [120, 82, 20],
+            },
           },
-        },
-        {
-          content: `AED ${aed(day.closing)}`,
-          styles: {
-            fillColor: GOLD_SOFT,
-            fontStyle: "bold",
-            fontSize: 9.4,
-            halign: "right",
-            textColor: day.closing < 0 ? RED : [120, 82, 20],
+          {
+            content: fa ? aed(day.closing) : money(day.closing),
+            styles: {
+              fillColor: GOLD_SOFT,
+              fontStyle: "bold",
+              fontSize: fs(9.4),
+              halign: al("right"),
+              textColor: day.closing < 0 ? RED : [120, 82, 20],
+            },
           },
-        },
-      ]);
+        ]),
+      );
       if (next)
         body.push([
           {
@@ -3196,27 +3382,25 @@ function ReportsV2() {
         ]);
     });
 
+    const widths = P
+      ? [17, fa ? 15 : 12, fa ? 25 : 23, fa ? 19 : 21, null, 18, 20, 20, 22]
+      : [22, 15, 31, 34, null, 27, 25, 25, 28];
+    const columnStyles = {};
+    widths.forEach((w, i) => {
+      if (w) columnStyles[fa ? NCOL - 1 - i : i] = { cellWidth: w };
+    });
     autoTable(doc, {
       ...tableBase,
       startY: 42,
-      head: [
-        ["TIME", "TYPE", "CATEGORY", "COUNTERPARTY", "DESCRIPTION", "REFERENCE", "CASH IN", "CASH OUT", "BALANCE"],
-      ],
+      head: [row(T.detHead)],
       body,
       rowPageBreak: "avoid",
-      columnStyles: {
-        0: { cellWidth: 22 },
-        1: { cellWidth: 15 },
-        2: { cellWidth: 31 },
-        3: { cellWidth: 34 },
-        5: { cellWidth: 27 },
-        6: { cellWidth: 25 },
-        7: { cellWidth: 25 },
-        8: { cellWidth: 28 },
-      },
+      columnStyles,
     });
 
-    doc.save(`Northfield_daily_cash_${from}_${to}.pdf`);
+    doc.save(
+      `Northfield_daily_cash_${fa ? "fa_" : ""}${P ? "portrait" : "landscape"}_${from}_${to}.pdf`,
+    );
     pushToast("Daily cash PDF downloaded successfully.");
   }
   async function pdf() {
@@ -3306,7 +3490,7 @@ function ReportsV2() {
         doc.text(names[scope].toUpperCase(), width - 13, 17, {
           align: "right",
         });
-        doc.text(`${period.toUpperCase()} REPORT`, width - 13, 22, {
+        doc.text(`${periodLabel.toUpperCase()} REPORT`, width - 13, 22, {
           align: "right",
         });
         doc.setFont("helvetica", "normal");
@@ -3458,35 +3642,38 @@ function ReportsV2() {
           ))}
         </div>
         <div className="card reportCommand">
-          <div className="periodSwitch">
-            {["daily", "monthly", "yearly"].map((p) => (
+          <div className="periodSwitch periodPresets">
+            {REPORT_PERIODS.map(([p, label]) => (
               <button
+                type="button"
                 className={period === p ? "active" : ""}
                 onClick={() => choosePeriod(p)}
                 key={p}
               >
-                {p.toUpperCase()}
+                {label.toUpperCase()}
               </button>
             ))}
           </div>
           <div className="reportDates">
-            <label>
-              Report Date
+            <label className="rangeField">
+              <small>FROM</small>
               <input
                 type="date"
-                value={anchor}
-                onChange={(e) => changeAnchor(e.target.value)}
+                value={from}
+                max={to}
+                onChange={(e) => changeDate("from", e.target.value)}
               />
             </label>
-            <span>
-              <small>FROM</small>
-              <b>{from}</b>
-            </span>
             <i>→</i>
-            <span>
+            <label className="rangeField">
               <small>TO</small>
-              <b>{to}</b>
-            </span>
+              <input
+                type="date"
+                value={to}
+                min={from}
+                onChange={(e) => changeDate("to", e.target.value)}
+              />
+            </label>
             <button
               disabled={busy}
               className="runReport"
@@ -3512,7 +3699,7 @@ function ReportsV2() {
                       : money(x[1])}
                   </div>
                   <div className="note">
-                    {names[scope]} · {period}
+                    {names[scope]} · {periodLabel}
                   </div>
                 </div>
               ))}
@@ -3521,7 +3708,7 @@ function ReportsV2() {
               <div>
                 <small>EXPORT CENTER</small>
                 <b>
-                  {names[scope]} · {period} report
+                  {names[scope]} · {periodLabel} report
                 </b>
               </div>
               <button onClick={pdf}>
