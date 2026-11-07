@@ -191,7 +191,7 @@ function displayCell(key, value) {
     );
   if (
     key.includes("amount") ||
-    ["cash_in", "cash_out", "balance", "opening_cash"].includes(key)
+    ["cash_in", "cash_out", "balance", "opening_cash", "opening", "closing"].includes(key)
   )
     return (
       <b className="amountCell">
@@ -2770,6 +2770,25 @@ function ReportsV2() {
       XLSX.utils.aoa_to_sheet(meta),
       "Executive Summary",
     );
+    if (scope === "cash" && d.days)
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.json_to_sheet(
+          d.days.map((x, i) => ({
+            DATE: x.date,
+            "DAY STATUS": x.status === "FINALIZED" ? "CLOSED" : "OPEN",
+            OPENING: x.opening,
+            "CASH IN": x.cash_in,
+            "CASH OUT": x.cash_out,
+            EXPECTED: x.expected,
+            COUNTED: x.counted ?? "",
+            VARIANCE: x.variance,
+            CLOSING: x.closing,
+            "CARRIED TO": d.days[i + 1]?.date || "",
+          })),
+        ),
+        "Daily Cash",
+      );
     XLSX.utils.book_append_sheet(
       wb,
       XLSX.utils.json_to_sheet(d.entries),
@@ -2778,8 +2797,431 @@ function ReportsV2() {
     XLSX.writeFile(wb, `Northfield_${scope}_${period}_${from}_${to}.xlsx`);
     pushToast("Professional Excel workbook downloaded successfully.");
   }
+  async function cashDailyPdf() {
+    const settings = await fetch("/api/public-settings", {
+      cache: "no-store",
+    }).then((r) => r.json());
+    const logoUrl = settings.company_logo || "/northfield-logo.png";
+    const [logo, watermark] = await Promise.all([
+      imageData(logoUrl),
+      imageData(logoUrl, 0.04),
+    ]);
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const W = doc.internal.pageSize.getWidth(),
+      H = doc.internal.pageSize.getHeight(),
+      M = 12;
+    const company = settings.company_name || "Northfield Veterinary Clinic L.L.C",
+      address = settings.company_address || "United Arab Emirates";
+    const NAVY = [8, 38, 58],
+      NAVY2 = [16, 58, 84],
+      GOLD = [205, 150, 52],
+      GOLD_SOFT = [250, 241, 222],
+      IVORY = [252, 250, 245],
+      GREEN = [18, 125, 92],
+      RED = [184, 62, 52],
+      INK = [33, 52, 64],
+      MUTED = [120, 134, 142];
+    const aed = (n) =>
+      Number(n || 0).toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    const dayTitle = (k) => {
+      const dt = new Date(`${k}T00:00:00`);
+      return dt
+        .toLocaleDateString("en-GB", {
+          weekday: "long",
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        })
+        .toUpperCase();
+    };
+    const shortDay = (k) =>
+      k
+        ? new Date(`${k}T00:00:00`).toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          })
+        : "";
+    const days = d.days || [],
+      s = d.summary || {};
+    const byDay = {};
+    for (const e of d.entries) {
+      const k = String(e.date).slice(0, 10);
+      (byDay[k] ||= []).push(e);
+    }
+
+    const drawn = new Set();
+    const chromeOnce = () => {
+      const p = doc.getCurrentPageInfo().pageNumber;
+      if (drawn.has(p)) return;
+      drawn.add(p);
+      chrome(p);
+    };
+    const chrome = (pageNumber) => {
+      doc.setFillColor(...IVORY);
+      doc.rect(0, 0, W, H, "F");
+      doc.addImage(watermark, "PNG", W / 2 - 60, H / 2 - 28, 120, 56);
+      doc.setDrawColor(...GOLD);
+      doc.setLineWidth(0.6);
+      doc.roundedRect(6, 6, W - 12, H - 12, 2.5, 2.5);
+      doc.setDrawColor(230, 215, 185);
+      doc.setLineWidth(0.2);
+      doc.roundedRect(8, 8, W - 16, H - 16, 2, 2);
+      doc.setFillColor(...NAVY);
+      doc.roundedRect(M, 12, W - M * 2, 24, 1.8, 1.8, "F");
+      doc.setFillColor(...GOLD);
+      doc.rect(M, 35, W - M * 2, 0.9, "F");
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(M + 3, 14.5, 40, 19, 1.4, 1.4, "F");
+      doc.addImage(logo, "PNG", M + 4.5, 15.5, 37, 17);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.setTextColor(255, 255, 255);
+      doc.text(company.toUpperCase(), W / 2, 22.5, { align: "center" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(214, 196, 160);
+      doc.text(address, W / 2, 29, { align: "center" });
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(...GOLD);
+      doc.text("DAILY CASH REPORT", W - M - 4, 20.5, { align: "right" });
+      doc.setFontSize(8);
+      doc.setTextColor(255, 255, 255);
+      doc.text("OPENING  ·  MOVEMENTS  ·  CLOSING", W - M - 4, 26, {
+        align: "right",
+      });
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(214, 196, 160);
+      doc.text(`${shortDay(from)}  —  ${shortDay(to)}`, W - M - 4, 31.5, {
+        align: "right",
+      });
+      // footer
+      doc.setDrawColor(...GOLD);
+      doc.setLineWidth(0.3);
+      doc.line(M, H - 15, W - M, H - 15);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(...MUTED);
+      doc.text(
+        `Generated ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai" })} (Dubai)`,
+        M,
+        H - 10.5,
+      );
+      doc.setTextColor(...GOLD);
+      doc.setFont("helvetica", "bold");
+      doc.text(
+        `${company.toUpperCase()}  ·  CONFIDENTIAL CASH CONTROL RECORD`,
+        W / 2,
+        H - 10.5,
+        { align: "center" },
+      );
+      doc.setTextColor(...NAVY);
+      doc.text(`PAGE ${pageNumber}`, W - M, H - 10.5, { align: "right" });
+    };
+
+    // ---------- page 1: KPI cards + day-by-day summary ----------
+    chromeOnce();
+    const cards = [
+      ["OPENING CASH", s.opening_cash, NAVY2, `Start of ${shortDay(days[0]?.date || from)}`],
+      ["TOTAL CASH IN", s.total_in, GREEN, "All posted receipts"],
+      ["TOTAL CASH OUT", s.total_out, RED, "All posted payments"],
+      ["CLOSING CASH", s.running_cash, GOLD, "Carried forward"],
+    ];
+    const gap = 4,
+      cw = (W - M * 2 - gap * 3) / 4,
+      cy = 42;
+    cards.forEach(([label, value, color, note], i) => {
+      const x = M + i * (cw + gap);
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(228, 216, 192);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(x, cy, cw, 27, 2, 2, "FD");
+      doc.setFillColor(...color);
+      doc.roundedRect(x, cy, 2.4, 27, 1.2, 1.2, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...MUTED);
+      doc.text(label, x + 7, cy + 8);
+      doc.setFontSize(16);
+      doc.setTextColor(...color);
+      doc.text(`AED ${aed(value)}`, x + 7, cy + 18);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(...MUTED);
+      doc.text(note, x + 7, cy + 23.5);
+    });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(...NAVY);
+    doc.text("DAY-BY-DAY CASH FLOW", M, 79);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...MUTED);
+    doc.text(
+      "Each day opens with the cash carried forward from the previous day.",
+      M + 52,
+      79,
+    );
+
+    const tableBase = {
+      theme: "grid",
+      margin: { top: 42, left: M, right: M, bottom: 19 },
+      willDrawPage: chromeOnce,
+      styles: {
+        font: "helvetica",
+        fontSize: 8.6,
+        textColor: INK,
+        lineColor: [226, 222, 212],
+        lineWidth: 0.2,
+        cellPadding: { top: 2.2, bottom: 2.2, left: 2.6, right: 2.6 },
+        valign: "middle",
+        overflow: "linebreak",
+        fillColor: [255, 255, 255],
+      },
+      headStyles: {
+        fillColor: NAVY,
+        textColor: GOLD,
+        fontStyle: "bold",
+        fontSize: 8.4,
+        lineColor: NAVY,
+        cellPadding: 2.8,
+      },
+    };
+
+    autoTable(doc, {
+      ...tableBase,
+      startY: 83,
+      head: [
+        ["DATE", "DAY STATUS", "OPENING", "CASH IN", "CASH OUT", "CLOSING", "CARRIED TO"],
+      ],
+      body: days.map((x, i) => [
+        { content: shortDay(x.date), styles: { fontStyle: "bold", textColor: NAVY } },
+        {
+          content: x.status === "FINALIZED" ? "CLOSED" : "OPEN",
+          styles: {
+            halign: "center",
+            fontStyle: "bold",
+            textColor: x.status === "FINALIZED" ? GREEN : GOLD,
+          },
+        },
+        { content: aed(x.opening), styles: { halign: "right" } },
+        {
+          content: x.cash_in ? `+ ${aed(x.cash_in)}` : "—",
+          styles: { halign: "right", textColor: GREEN, fontStyle: "bold" },
+        },
+        {
+          content: x.cash_out ? `- ${aed(x.cash_out)}` : "—",
+          styles: { halign: "right", textColor: RED, fontStyle: "bold" },
+        },
+        {
+          content: aed(x.closing),
+          styles: {
+            halign: "right",
+            fontStyle: "bold",
+            textColor: x.closing < 0 ? RED : NAVY,
+            fillColor: GOLD_SOFT,
+          },
+        },
+        {
+          content: days[i + 1] ? `to ${shortDay(days[i + 1].date)}` : "next day",
+          styles: { textColor: MUTED, halign: "center" },
+        },
+      ]),
+      foot: [
+        [
+          { content: `${days.length} BUSINESS DAYS`, colSpan: 2 },
+          { content: aed(s.opening_cash), styles: { halign: "right" } },
+          { content: `+ ${aed(s.total_in)}`, styles: { halign: "right" } },
+          { content: `- ${aed(s.total_out)}`, styles: { halign: "right" } },
+          { content: aed(s.running_cash), styles: { halign: "right" } },
+          "",
+        ],
+      ],
+      footStyles: {
+        fillColor: NAVY,
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 9,
+      },
+      alternateRowStyles: { fillColor: [250, 248, 243] },
+    });
+
+    // ---------- detail: one block per day ----------
+    doc.addPage();
+    chromeOnce();
+    const NCOL = 9;
+    const body = [];
+    days.forEach((day, i) => {
+      const prev = days[i - 1],
+        next = days[i + 1];
+      body.push([
+        {
+          content: `${dayTitle(day.date)}     ·     DAY ${day.status === "FINALIZED" ? "CLOSED" : "OPEN"}`,
+          colSpan: NCOL,
+          styles: {
+            fillColor: NAVY,
+            textColor: [255, 255, 255],
+            fontStyle: "bold",
+            fontSize: 10,
+            cellPadding: { top: 3.4, bottom: 3.4, left: 4, right: 4 },
+          },
+        },
+      ]);
+      body.push([
+        {
+          content: `OPENING CASH${prev ? `   (brought forward from ${shortDay(prev.date)})` : ""}`,
+          colSpan: 8,
+          styles: { fillColor: [232, 240, 246], fontStyle: "bold", textColor: NAVY2 },
+        },
+        {
+          content: aed(day.opening),
+          styles: {
+            fillColor: [232, 240, 246],
+            fontStyle: "bold",
+            halign: "right",
+            textColor: NAVY2,
+          },
+        },
+      ]);
+      let bal = day.opening;
+      for (const e of byDay[day.date] || []) {
+        const posted = e.status === "POSTED",
+          isIn = e.type === "IN";
+        if (posted) bal += isIn ? Number(e.amount) : -Number(e.amount);
+        const dim = posted ? {} : { textColor: [170, 170, 170], fontStyle: "italic" };
+        body.push([
+          { content: pdfTime(e.time), styles: { textColor: MUTED, ...dim } },
+          {
+            content: posted ? e.type : `${e.type} · ${e.status}`,
+            styles: {
+              fontStyle: "bold",
+              halign: "center",
+              textColor: isIn ? GREEN : RED,
+              ...dim,
+            },
+          },
+          { content: e.category || "", styles: dim },
+          { content: e.counterparty || "", styles: dim },
+          { content: e.description || "", styles: dim },
+          { content: e.reference || "", styles: { textColor: MUTED, ...dim } },
+          {
+            content: isIn ? aed(e.amount) : "",
+            styles: { halign: "right", textColor: GREEN, fontStyle: "bold", ...dim },
+          },
+          {
+            content: isIn ? "" : aed(e.amount),
+            styles: { halign: "right", textColor: RED, fontStyle: "bold", ...dim },
+          },
+          {
+            content: aed(Math.round(bal * 100) / 100),
+            styles: {
+              halign: "right",
+              textColor: bal < 0 ? RED : NAVY,
+              fillColor: [250, 248, 243],
+              ...dim,
+            },
+          },
+        ]);
+      }
+      if (!(byDay[day.date] || []).length)
+        body.push([
+          {
+            content: "No cash movements recorded on this day.",
+            colSpan: NCOL,
+            styles: { textColor: MUTED, fontStyle: "italic", halign: "center" },
+          },
+        ]);
+      body.push([
+        {
+          content: "DAY TOTAL",
+          colSpan: 6,
+          styles: { fontStyle: "bold", halign: "right", textColor: NAVY },
+        },
+        {
+          content: `+ ${aed(day.cash_in)}`,
+          styles: { halign: "right", fontStyle: "bold", textColor: GREEN },
+        },
+        {
+          content: `- ${aed(day.cash_out)}`,
+          styles: { halign: "right", fontStyle: "bold", textColor: RED },
+        },
+        { content: "" },
+      ]);
+      if (day.counted != null && Math.abs(day.variance) >= 0.01)
+        body.push([
+          {
+            content: `EXPECTED ${aed(day.expected)}   ·   COUNTED ${aed(day.counted)}   ·   VARIANCE ${day.variance > 0 ? "+" : ""}${aed(day.variance)}`,
+            colSpan: NCOL,
+            styles: {
+              halign: "right",
+              fontStyle: "bold",
+              textColor: day.variance < 0 ? RED : GREEN,
+            },
+          },
+        ]);
+      body.push([
+        {
+          content: `CLOSING CASH   ·   carried forward to ${next ? shortDay(next.date) : "the next business day"}`,
+          colSpan: 8,
+          styles: {
+            fillColor: GOLD_SOFT,
+            fontStyle: "bold",
+            fontSize: 9.4,
+            textColor: [120, 82, 20],
+          },
+        },
+        {
+          content: `AED ${aed(day.closing)}`,
+          styles: {
+            fillColor: GOLD_SOFT,
+            fontStyle: "bold",
+            fontSize: 9.4,
+            halign: "right",
+            textColor: day.closing < 0 ? RED : [120, 82, 20],
+          },
+        },
+      ]);
+      if (next)
+        body.push([
+          {
+            content: "",
+            colSpan: NCOL,
+            styles: { minCellHeight: 5, lineWidth: 0, fillColor: false },
+          },
+        ]);
+    });
+
+    autoTable(doc, {
+      ...tableBase,
+      startY: 42,
+      head: [
+        ["TIME", "TYPE", "CATEGORY", "COUNTERPARTY", "DESCRIPTION", "REFERENCE", "CASH IN", "CASH OUT", "BALANCE"],
+      ],
+      body,
+      rowPageBreak: "avoid",
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 15 },
+        2: { cellWidth: 31 },
+        3: { cellWidth: 34 },
+        5: { cellWidth: 27 },
+        6: { cellWidth: 25 },
+        7: { cellWidth: 25 },
+        8: { cellWidth: 28 },
+      },
+    });
+
+    doc.save(`Northfield_daily_cash_${from}_${to}.pdf`);
+    pushToast("Daily cash PDF downloaded successfully.");
+  }
   async function pdf() {
     try {
+      if (scope === "cash" && d.days) return await cashDailyPdf();
       const settings = await fetch("/api/public-settings", {
         cache: "no-store",
       }).then((r) => r.json());
@@ -2976,11 +3418,18 @@ function ReportsV2() {
               ["TOTAL VARIANCE", s.total_variance],
               ["FINALIZED DAYS", s.finalized_count],
             ]
-          : [
-              ["TOTAL IN", s.total_in],
-              ["TOTAL OUT", s.total_out],
-              ["NET BALANCE", scope === "bank" ? s.balance : s.running_cash],
-            ];
+          : scope === "cash"
+            ? [
+                ["OPENING CASH", s.opening_cash],
+                ["TOTAL IN", s.total_in],
+                ["TOTAL OUT", s.total_out],
+                ["CLOSING CASH", s.running_cash],
+              ]
+            : [
+                ["TOTAL IN", s.total_in],
+                ["TOTAL OUT", s.total_out],
+                ["NET BALANCE", s.balance],
+              ];
   return (
     <>
       <PageHead
@@ -3082,6 +3531,31 @@ function ReportsV2() {
                 <FileText /> DOWNLOAD EXCEL
               </button>
             </div>
+            {scope === "cash" && d.days?.length > 0 && (
+              <div className="card reportTableCard">
+                <div className="cardHeader">
+                  <div>
+                    <div className="sectionTitle">Day-by-Day Cash Flow</div>
+                    <div className="sectionSub">
+                      Each day opens with the cash carried forward from the
+                      previous day.
+                    </div>
+                  </div>
+                  <span className="softBadge">{d.days.length} DAYS</span>
+                </div>
+                <Table
+                  rows={d.days.map((x, i) => ({
+                    date: x.date,
+                    day_status: x.status === "FINALIZED" ? "CLOSED" : "OPEN",
+                    opening: x.opening,
+                    cash_in: x.cash_in,
+                    cash_out: x.cash_out,
+                    closing: x.closing,
+                    carried_to: d.days[i + 1]?.date || "next day",
+                  }))}
+                />
+              </div>
+            )}
             <div className="card reportTableCard">
               <div className="cardHeader">
                 <div>
