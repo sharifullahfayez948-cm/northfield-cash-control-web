@@ -42,7 +42,7 @@ async function openingBefore(from) {
 async function cashDays(from, to, entries) {
   const dayRows = (
     await query(
-      `select business_date,opening_cash,actual_cash,expected_closing,variance,status from cash_days where business_date between $1 and $2`,
+      `select business_date,opening_cash,actual_cash,expected_closing,variance,status,manager_note,finalized_at from cash_days where business_date between $1 and $2`,
       [from, to],
     )
   ).rows;
@@ -77,6 +77,8 @@ async function cashDays(from, to, entries) {
       closing,
       status: d?.status || "OPEN",
       records: m.count,
+      note: d?.manager_note || "",
+      finalized_at: d?.finalized_at || null,
     };
   });
 }
@@ -105,7 +107,18 @@ export async function GET(req) {
           [from, to],
         )
       ).rows[0];
-      summary.balance = Number(summary.total_in) - Number(summary.total_out);
+      const ob = (
+        await query(
+          `select coalesce((select sum(opening_balance) from bank_accounts where active=true),0)
+            + coalesce((select sum(case when e.direction='IN' then e.amount else -e.amount end)
+                from bank_entries e join bank_accounts b on b.id=e.bank_account_id
+                where b.active=true and e.status='POSTED' and e.business_date<$1),0) opening`,
+          [from],
+        )
+      ).rows[0];
+      summary.opening_balance = round2(ob.opening);
+      summary.balance = round2(Number(summary.total_in) - Number(summary.total_out));
+      summary.closing_balance = round2(summary.opening_balance + summary.balance);
     } else if (scope === "transfer") {
       entries = (
         await query(
@@ -120,51 +133,26 @@ export async function GET(req) {
         )
       ).rows[0];
     } else if (scope === "closing") {
-      entries = (
+      // Same day-by-day carry-forward as the cash report, so both agree.
+      const cash = (
         await query(
-          `
-        with movements as (
-          select business_date,
-            coalesce(sum(case when direction='IN' and status='POSTED' then amount else 0 end),0) cash_in,
-            coalesce(sum(case when direction='OUT' and status='POSTED' then amount else 0 end),0) cash_out
-          from cash_entries
-          where business_date between $1 and $2
-          group by business_date
-        )
-        select d.business_date date,d.opening_cash,coalesce(m.cash_in,0) cash_in,
-          coalesce(m.cash_out,0) cash_out,d.expected_closing,d.actual_cash,d.variance,
-          d.status,d.manager_note note,d.finalized_at
-        from cash_days d
-        left join movements m on m.business_date=d.business_date
-        where d.business_date between $1 and $2
-        order by d.business_date
-      `,
+          `select business_date date,direction type,amount,status from cash_entries where business_date between $1 and $2 order by business_date,id`,
           [from, to],
         )
       ).rows;
-      summary = (
-        await query(
-          `
-        with movements as (
-          select business_date,
-            coalesce(sum(case when direction='IN' and status='POSTED' then amount else 0 end),0) cash_in,
-            coalesce(sum(case when direction='OUT' and status='POSTED' then amount else 0 end),0) cash_out
-          from cash_entries
-          where business_date between $1 and $2
-          group by business_date
-        )
-        select coalesce(sum(m.cash_in),0) total_in,coalesce(sum(m.cash_out),0) total_out,
-          coalesce(sum(d.variance),0) total_variance,count(*) day_count,
-          coalesce((select opening_cash from cash_days where business_date between $1 and $2 order by business_date limit 1),0) opening_cash,
-          coalesce((select coalesce(actual_cash,expected_closing) from cash_days where business_date between $1 and $2 order by business_date desc limit 1),0) final_cash,
-          count(*) filter(where d.status='FINALIZED') finalized_count
-        from cash_days d
-        left join movements m on m.business_date=d.business_date
-        where d.business_date between $1 and $2
-      `,
-          [from, to],
-        )
-      ).rows[0];
+      entries = await cashDays(from, to, cash);
+      const sum = (k) => round2(entries.reduce((t, x) => t + Number(x[k] || 0), 0));
+      summary = {
+        opening_cash: entries.length ? entries[0].opening : await openingBefore(from),
+        total_in: sum("cash_in"),
+        total_out: sum("cash_out"),
+        total_variance: sum("variance"),
+        day_count: entries.length,
+        finalized_count: entries.filter((x) => x.status === "FINALIZED").length,
+      };
+      summary.final_cash = entries.length
+        ? entries[entries.length - 1].closing
+        : summary.opening_cash;
     } else {
       entries = (
         await query(

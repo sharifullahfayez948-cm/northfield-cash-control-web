@@ -54,6 +54,24 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import CompanyBrand from "@/components/CompanyBrand";
+import {
+  aed,
+  createLuxuryReport,
+  dayLabel,
+  loadBrand,
+  longDayLabel,
+  signed,
+  timeLabel,
+} from "@/lib/luxuryPdf";
+
+const dayStatusCell = (status, C) => ({
+  content: status === "FINALIZED" ? "CLOSED" : "OPEN",
+  styles: {
+    halign: "center",
+    fontStyle: "bold",
+    textColor: status === "FINALIZED" ? C.GREEN : C.GOLD,
+  },
+});
 
 const money = (v) =>
   `AED ${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -191,7 +209,7 @@ function displayCell(key, value) {
     );
   if (
     key.includes("amount") ||
-    ["cash_in", "cash_out", "balance", "opening_cash", "opening", "closing"].includes(key)
+    ["cash_in", "cash_out", "balance", "opening_cash", "opening", "closing", "expected", "variance"].includes(key)
   )
     return (
       <b className="amountCell">
@@ -2838,751 +2856,301 @@ function ReportsV2() {
     XLSX.writeFile(wb, `Northfield_${scope}_${period}_${from}_${to}.xlsx`);
     pushToast("Professional Excel workbook downloaded successfully.");
   }
-  async function cashDailyPdf({ orientation = "portrait", lang = "en" } = {}) {
-    const settings = await fetch("/api/public-settings", {
-      cache: "no-store",
-    }).then((r) => r.json());
-    const logoUrl = settings.company_logo || "/northfield-logo.png";
-    const [logo, watermark] = await Promise.all([
-      imageData(logoUrl),
-      imageData(logoUrl, 0.04),
-    ]);
-    const doc = new jsPDF({ orientation, unit: "mm", format: "a4" });
-    const fa = lang === "fa",
-      P = orientation === "portrait";
-    let F = "helvetica";
-    if (fa) {
-      const b64 = async (url) => {
-        const buf = new Uint8Array(
-          await (await fetch(url)).arrayBuffer(),
-        );
-        let s = "";
-        for (let i = 0; i < buf.length; i += 0x8000)
-          s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-        return btoa(s);
-      };
-      const [reg, bold] = await Promise.all([
-        b64("/fonts/persian-regular.ttf"),
-        b64("/fonts/persian-bold.ttf"),
-      ]);
-      doc.addFileToVFS("persian-regular.ttf", reg);
-      doc.addFont("persian-regular.ttf", "Persian", "normal");
-      doc.addFileToVFS("persian-bold.ttf", bold);
-      doc.addFont("persian-bold.ttf", "Persian", "bold");
-      F = "Persian";
-    }
-    // Joins text parts in reading order; jsPDF handles right-to-left layout itself.
-    const J = (...p) => p.filter((x) => x !== "" && x != null).join(fa ? "  " : " ");
-    const T = fa
-      ? {
-          title: "گزارش روزانه صندوق",
-          sub: "موجودی اول روز · ورود و خروج · موجودی آخر روز",
-          opening: "موجودی اول دوره",
-          totalIn: "جمع دریافتی",
-          totalOut: "جمع پرداختی",
-          closing: "موجودی آخر دوره",
-          startOf: (x) => J("ابتدای", x),
-          allIn: "همه دریافتی‌های ثبت‌شده",
-          allOut: "همه پرداختی‌های ثبت‌شده",
-          carried: "منتقل به روز بعد",
-          flow: "گردش صندوق روز به روز",
-          flowNote: "هر روز با موجودی آخرِ روزِ قبل باز می‌شود",
-          sumHead: ["تاریخ", "وضعیت روز", "موجودی اول", "دریافتی", "پرداختی", "موجودی آخر", "منتقل به"],
-          detHead: ["ساعت", "نوع", "دسته", "طرف حساب", "شرح", "مرجع", "دریافتی", "پرداختی", "مانده"],
-          closed: "بسته",
-          open: "باز",
-          dayClosed: "روز بسته شده",
-          dayOpen: "روز باز",
-          days: (n) => J(String(n), "روز کاری"),
-          nextDay: "روز بعد",
-          to: (x) => x,
-          openRow: (x) =>
-            x ? J("موجودی اول روز", "—", "منتقل‌شده از", x) : "موجودی اول روز",
-          noMoves: "در این روز تراکنش نقدی ثبت نشده است",
-          dayTotal: "جمع روز",
-          variance: (e, c, v) =>
-            J("مانده حساب‌شده", e, "·", "شمارش‌شده", c, "·", "اختلاف", v),
-          closeRow: (x) =>
-            x
-              ? J("موجودی آخر روز", "·", "منتقل به", x)
-              : J("موجودی آخر روز", "·", "منتقل به روز کاری بعد"),
-          IN: "دریافت",
-          OUT: "پرداخت",
-          aedPrefix: "درهم",
-          conf: "سند محرمانه کنترل صندوق",
-          gen: "تهیه شده",
-          page: "صفحه",
-        }
-      : {
-          title: "DAILY CASH REPORT",
-          sub: "OPENING  ·  MOVEMENTS  ·  CLOSING",
-          opening: "OPENING CASH",
-          totalIn: "TOTAL CASH IN",
-          totalOut: "TOTAL CASH OUT",
-          closing: "CLOSING CASH",
-          startOf: (x) => `Start of ${x}`,
-          allIn: "All posted receipts",
-          allOut: "All posted payments",
-          carried: "Carried forward",
-          flow: "DAY-BY-DAY CASH FLOW",
-          flowNote: "Each day opens with the cash carried forward from the previous day.",
-          sumHead: ["DATE", "DAY STATUS", "OPENING", "CASH IN", "CASH OUT", "CLOSING", "CARRIED TO"],
-          detHead: ["TIME", "TYPE", "CATEGORY", "COUNTERPARTY", "DESCRIPTION", "REFERENCE", "CASH IN", "CASH OUT", "BALANCE"],
-          closed: "CLOSED",
-          open: "OPEN",
-          dayClosed: "DAY CLOSED",
-          dayOpen: "DAY OPEN",
-          days: (n) => `${n} BUSINESS DAYS`,
-          nextDay: "next day",
-          to: (x) => `to ${x}`,
-          openRow: (x) => `OPENING CASH${x ? `   (brought forward from ${x})` : ""}`,
-          noMoves: "No cash movements recorded on this day.",
-          dayTotal: "DAY TOTAL",
-          variance: (e, c, v) => `EXPECTED ${e}   ·   COUNTED ${c}   ·   VARIANCE ${v}`,
-          closeRow: (x) => `CLOSING CASH   ·   carried forward to ${x || "the next business day"}`,
-          IN: "IN",
-          OUT: "OUT",
-          aedPrefix: "AED",
-          conf: "CONFIDENTIAL CASH CONTROL RECORD",
-          gen: "Generated",
-          page: "PAGE",
-        };
-    if (P && !fa)
-      T.detHead = ["TIME", "TYPE", "CATEGORY", "PARTY", "DESCRIPTION", "REF.", "CASH IN", "CASH OUT", "BALANCE"];
-    const W = doc.internal.pageSize.getWidth(),
-      H = doc.internal.pageSize.getHeight(),
-      M = 12;
-    const company = settings.company_name || "Northfield Veterinary Clinic L.L.C",
-      address = settings.company_address || "United Arab Emirates";
-    const NAVY = [8, 38, 58],
-      NAVY2 = [16, 58, 84],
-      GOLD = [205, 150, 52],
-      GOLD_SOFT = [250, 241, 222],
-      IVORY = [252, 250, 245],
-      GREEN = [18, 125, 92],
-      RED = [184, 62, 52],
-      INK = [33, 52, 64],
-      MUTED = [120, 134, 142];
-    const fs = (n) => (P ? n * 0.86 : n);
-    const aed = (n) =>
-      Number(n || 0).toLocaleString("en-US", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
-    const money = (n) => `AED ${aed(n)}`;
-    const locale = fa ? "fa-IR-u-ca-gregory-nu-latn" : "en-GB";
-    // Persian reading order is always weekday, day, month, year.
-    const fparts = (k, o) => {
-      const m = Object.fromEntries(
-        new Intl.DateTimeFormat(locale, o)
-          .formatToParts(new Date(`${k}T00:00:00`))
-          .map((p) => [p.type, p.value]),
-      );
-      return ["weekday", "day", "month", "year"].filter((t) => m[t]).map((t) => m[t]);
-    };
-    const dayTitle = (k) => {
-      if (fa)
-        return J(...fparts(k, { weekday: "long", day: "2-digit", month: "long", year: "numeric" }));
-      const t = new Date(`${k}T00:00:00`).toLocaleDateString(locale, {
-        weekday: "long",
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
-      });
-      return fa ? t : t.toUpperCase();
-    };
-    const shortDay = (k) =>
-      k && fa
-        ? J(...fparts(k, { day: "2-digit", month: "short", year: "numeric" }))
-        : k
-        ? new Date(`${k}T00:00:00`).toLocaleDateString(locale, {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          })
-        : "";
-    // right-to-left helpers: mirror column order and alignment for Persian
-    const row = (cells) => (fa ? [...cells].reverse() : cells);
-    const al = (h) => (fa ? (h === "right" ? "left" : h === "center" ? "center" : "right") : h);
-    const X = (x, w = 0) => (fa ? W - x - w : x);
+  // ---------- Cash Control: day-by-day carry-forward ----------
+  async function cashDailyPdf(brand) {
+    const r = createLuxuryReport({
+      brand,
+      title: "DAILY CASH REPORT",
+      subtitle: "OPENING  ·  MOVEMENTS  ·  CLOSING",
+      from,
+      to,
+    });
+    const { C } = r;
     const days = d.days || [],
       s = d.summary || {};
     const byDay = {};
-    for (const e of d.entries) {
-      const k = String(e.date).slice(0, 10);
-      (byDay[k] ||= []).push(e);
-    }
+    for (const e of d.entries) (byDay[String(e.date).slice(0, 10)] ||= []).push(e);
 
-    const drawn = new Set();
-    const chromeOnce = () => {
-      const p = doc.getCurrentPageInfo().pageNumber;
-      if (drawn.has(p)) return;
-      drawn.add(p);
-      chrome(p);
-    };
-    const chrome = (pageNumber) => {
-      doc.setFillColor(...IVORY);
-      doc.rect(0, 0, W, H, "F");
-      doc.addImage(watermark, "PNG", W / 2 - 55, H / 2 - 26, 110, 52);
-      doc.setDrawColor(...GOLD);
-      doc.setLineWidth(0.6);
-      doc.roundedRect(6, 6, W - 12, H - 12, 2.5, 2.5);
-      doc.setDrawColor(230, 215, 185);
-      doc.setLineWidth(0.2);
-      doc.roundedRect(8, 8, W - 16, H - 16, 2, 2);
-      doc.setFillColor(...NAVY);
-      doc.roundedRect(M, 12, W - M * 2, 24, 1.8, 1.8, "F");
-      doc.setFillColor(...GOLD);
-      doc.rect(M, 35, W - M * 2, 0.9, "F");
-      const lw = P ? 34 : 40;
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(X(M + 3, lw), 14.5, lw, 19, 1.4, 1.4, "F");
-      doc.addImage(logo, "PNG", X(M + 4.5, lw - 3), 15.5, lw - 3, 17);
-      const cx = W / 2;
-      doc.setFont(F, "bold");
-      doc.setFontSize(P ? 10 : 15);
-      doc.setTextColor(255, 255, 255);
-      doc.text(company.toUpperCase(), cx, 22.5, { align: "center", maxWidth: P ? 96 : 140 });
-      doc.setFont(F, "normal");
-      doc.setFontSize(P ? 6.8 : 8);
-      doc.setTextColor(214, 196, 160);
-      doc.text(address, cx, 29, { align: "center", maxWidth: P ? 78 : 140 });
-      const rx = fa ? M + 4 : W - M - 4,
-        ra = fa ? "left" : "right";
-      doc.setFont(F, "bold");
-      doc.setFontSize(P ? 9.5 : 11);
-      doc.setTextColor(...GOLD);
-      doc.text(T.title, rx, 20.5, { align: ra });
-      doc.setFontSize(P ? 6.8 : 8);
-      doc.setTextColor(255, 255, 255);
-      doc.text(T.sub, rx, 26, { align: ra });
-      doc.setFont(F, "normal");
-      doc.setTextColor(214, 196, 160);
-      doc.text(
-        fa ? J("از", shortDay(from), "تا", shortDay(to)) : `${shortDay(from)}  —  ${shortDay(to)}`,
-        rx,
-        31.5,
-        { align: ra },
-      );
-      // footer
-      doc.setDrawColor(...GOLD);
-      doc.setLineWidth(0.3);
-      doc.line(M, H - 15, W - M, H - 15);
-      doc.setFont(F, "normal");
-      doc.setFontSize(P ? 6.4 : 7.5);
-      doc.setTextColor(...MUTED);
-      doc.text(
-        J(T.gen, new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai" })),
-        fa ? W - M : M,
-        H - 10.5,
-        { align: fa ? "right" : "left" },
-      );
-      doc.setTextColor(...GOLD);
-      doc.setFont(F, "bold");
-      doc.text(
-        fa ? T.conf : `${company.toUpperCase()}  ·  ${T.conf}`,
-        W / 2,
-        H - 10.5,
-        { align: "center" },
-      );
-      doc.setTextColor(...NAVY);
-      doc.text(J(T.page, String(pageNumber)), fa ? M : W - M, H - 10.5, {
-        align: fa ? "left" : "right",
-      });
-    };
-
-    // ---------- page 1: KPI cards + day-by-day summary ----------
-    chromeOnce();
-    const cards = [
-      [T.opening, s.opening_cash, NAVY2, T.startOf(shortDay(days[0]?.date || from))],
-      [T.totalIn, s.total_in, GREEN, T.allIn],
-      [T.totalOut, s.total_out, RED, T.allOut],
-      [T.closing, s.running_cash, GOLD, T.carried],
-    ];
-    const gap = P ? 3 : 4,
-      cw = (W - M * 2 - gap * 3) / 4,
-      cy = 42;
-    cards.forEach(([label, value, color, note], i) => {
-      const x = X(M + i * (cw + gap), cw);
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(228, 216, 192);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(x, cy, cw, 27, 2, 2, "FD");
-      doc.setFillColor(...color);
-      doc.roundedRect(fa ? x + cw - 2.4 : x, cy, 2.4, 27, 1.2, 1.2, "F");
-      const tx = fa ? x + cw - 6 : x + 6,
-        ta = fa ? "right" : "left";
-      doc.setFont(F, "bold");
-      doc.setFontSize(P ? 7.2 : 8.5);
-      doc.setTextColor(...MUTED);
-      doc.text(label, tx, cy + 8, { align: ta });
-      doc.setFontSize(P ? 12.5 : 16);
-      doc.setTextColor(...color);
-      doc.text(money(value), tx, cy + 18, { align: ta });
-      doc.setFont(F, "normal");
-      doc.setFontSize(P ? 6.4 : 7.5);
-      doc.setTextColor(...MUTED);
-      doc.text(note, tx, cy + 23.5, { align: ta });
+    let y = r.cards([
+      { label: "OPENING CASH", value: money(s.opening_cash), color: C.NAVY2, note: `Start of ${dayLabel(days[0]?.date || from)}` },
+      { label: "TOTAL CASH IN", value: money(s.total_in), color: C.GREEN, note: "All posted receipts" },
+      { label: "TOTAL CASH OUT", value: money(s.total_out), color: C.RED, note: "All posted payments" },
+      { label: "CLOSING CASH", value: money(s.running_cash), color: C.GOLD, note: "Carried forward" },
+    ]);
+    y = r.heading(
+      "DAY-BY-DAY CASH FLOW",
+      "Each day opens with the cash carried forward from the previous day.",
+      y + 10,
+    );
+    r.table({
+      startY: y,
+      head: [["DATE", "DAY STATUS", "OPENING", "CASH IN", "CASH OUT", "CLOSING", "CARRIED TO"]],
+      body: days.map((x, i) => [
+        { content: dayLabel(x.date), styles: { fontStyle: "bold", textColor: C.NAVY } },
+        dayStatusCell(x.status, C),
+        { content: aed(x.opening), styles: { halign: "right" } },
+        { content: signed(x.cash_in, "+"), styles: { halign: "right", textColor: C.GREEN, fontStyle: "bold" } },
+        { content: signed(x.cash_out, "-"), styles: { halign: "right", textColor: C.RED, fontStyle: "bold" } },
+        { content: aed(x.closing), styles: { halign: "right", fontStyle: "bold", textColor: x.closing < 0 ? C.RED : C.NAVY, fillColor: C.GOLD_SOFT } },
+        { content: days[i + 1] ? `to ${dayLabel(days[i + 1].date)}` : "next day", styles: { textColor: C.MUTED, halign: "center" } },
+      ]),
+      foot: [[
+        { content: `${days.length} BUSINESS DAYS`, colSpan: 2 },
+        { content: aed(s.opening_cash), styles: { halign: "right" } },
+        { content: `+ ${aed(s.total_in)}`, styles: { halign: "right" } },
+        { content: `- ${aed(s.total_out)}`, styles: { halign: "right" } },
+        { content: aed(s.running_cash), styles: { halign: "right" } },
+        "",
+      ]],
     });
 
-    doc.setFont(F, "bold");
-    doc.setFontSize(P ? 10 : 11);
-    doc.setTextColor(...NAVY);
-    doc.text(T.flow, fa ? W - M : M, 79, { align: fa ? "right" : "left" });
-    doc.setFont(F, "normal");
-    doc.setFontSize(P ? 7 : 8);
-    doc.setTextColor(...MUTED);
-    doc.text(T.flowNote, fa ? M : W - M, 79, { align: fa ? "left" : "right" });
-
-    const tableBase = {
-      theme: "grid",
-      margin: { top: 42, left: M, right: M, bottom: 19 },
-      willDrawPage: chromeOnce,
-      styles: {
-        font: F,
-        fontSize: fs(8.6),
-        textColor: INK,
-        lineColor: [226, 222, 212],
-        lineWidth: 0.2,
-        cellPadding: P
-          ? { top: 1.9, bottom: 1.9, left: 1.8, right: 1.8 }
-          : { top: 2.2, bottom: 2.2, left: 2.6, right: 2.6 },
-        valign: "middle",
-        overflow: "linebreak",
-        fillColor: [255, 255, 255],
-        halign: al("left"),
-      },
-      headStyles: {
-        fillColor: NAVY,
-        textColor: GOLD,
-        fontStyle: "bold",
-        fontSize: fs(8.4),
-        lineColor: NAVY,
-        cellPadding: P ? 2.2 : 2.8,
-        halign: al("left"),
-      },
-    };
-
-    autoTable(doc, {
-      ...tableBase,
-      startY: 83,
-      head: [row(T.sumHead)],
-      body: days.map((x, i) =>
-        row([
-          { content: shortDay(x.date), styles: { fontStyle: "bold", textColor: NAVY } },
-          {
-            content: x.status === "FINALIZED" ? T.closed : T.open,
-            styles: {
-              halign: "center",
-              fontStyle: "bold",
-              textColor: x.status === "FINALIZED" ? GREEN : GOLD,
-            },
-          },
-          { content: aed(x.opening), styles: { halign: al("right") } },
-          {
-            content: x.cash_in ? `+ ${aed(x.cash_in)}` : "—",
-            styles: { halign: al("right"), textColor: GREEN, fontStyle: "bold" },
-          },
-          {
-            content: x.cash_out ? `- ${aed(x.cash_out)}` : "—",
-            styles: { halign: al("right"), textColor: RED, fontStyle: "bold" },
-          },
-          {
-            content: aed(x.closing),
-            styles: {
-              halign: al("right"),
-              fontStyle: "bold",
-              textColor: x.closing < 0 ? RED : NAVY,
-              fillColor: GOLD_SOFT,
-            },
-          },
-          {
-            content: days[i + 1] ? T.to(shortDay(days[i + 1].date)) : T.nextDay,
-            styles: { textColor: MUTED, halign: "center" },
-          },
-        ]),
-      ),
-      foot: [
-        row([
-          { content: T.days(days.length), colSpan: 2 },
-          { content: aed(s.opening_cash), styles: { halign: al("right") } },
-          { content: `+ ${aed(s.total_in)}`, styles: { halign: al("right") } },
-          { content: `- ${aed(s.total_out)}`, styles: { halign: al("right") } },
-          { content: aed(s.running_cash), styles: { halign: al("right") } },
-          "",
-        ]),
-      ],
-      footStyles: {
-        fillColor: NAVY,
-        textColor: [255, 255, 255],
-        fontStyle: "bold",
-        fontSize: fs(9),
-        halign: al("left"),
-      },
-      alternateRowStyles: { fillColor: [250, 248, 243] },
-    });
-
-    // ---------- detail: one block per day ----------
-    doc.addPage();
-    chromeOnce();
-    const NCOL = 9;
-    const body = [];
+    r.newPage();
+    const N = 9,
+      body = [];
     days.forEach((day, i) => {
       const prev = days[i - 1],
-        next = days[i + 1];
+        next = days[i + 1],
+        list = byDay[day.date] || [];
+      body.push([{
+        content: `${longDayLabel(day.date)}     ·     DAY ${day.status === "FINALIZED" ? "CLOSED" : "OPEN"}`,
+        colSpan: N,
+        styles: { fillColor: C.NAVY, textColor: C.WHITE, fontStyle: "bold", fontSize: r.P ? 8.6 : 10, cellPadding: { top: 3.2, bottom: 3.2, left: 4, right: 4 } },
+      }]);
       body.push([
-        {
-          content: fa
-            ? J(dayTitle(day.date), "·", day.status === "FINALIZED" ? T.dayClosed : T.dayOpen)
-            : `${dayTitle(day.date)}     ·     ${day.status === "FINALIZED" ? T.dayClosed : T.dayOpen}`,
-          colSpan: NCOL,
-          styles: {
-            fillColor: NAVY,
-            textColor: [255, 255, 255],
-            fontStyle: "bold",
-            fontSize: fs(10),
-            cellPadding: { top: 3.2, bottom: 3.2, left: 4, right: 4 },
-          },
-        },
+        { content: `OPENING CASH${prev ? `   (brought forward from ${dayLabel(prev.date)})` : ""}`, colSpan: 8, styles: { fillColor: C.BLUE_SOFT, fontStyle: "bold", textColor: C.NAVY2 } },
+        { content: aed(day.opening), styles: { fillColor: C.BLUE_SOFT, fontStyle: "bold", halign: "right", textColor: C.NAVY2 } },
       ]);
-      body.push(
-        row([
-          {
-            content: T.openRow(prev ? shortDay(prev.date) : ""),
-            colSpan: 8,
-            styles: { fillColor: [232, 240, 246], fontStyle: "bold", textColor: NAVY2 },
-          },
-          {
-            content: aed(day.opening),
-            styles: {
-              fillColor: [232, 240, 246],
-              fontStyle: "bold",
-              halign: al("right"),
-              textColor: NAVY2,
-            },
-          },
-        ]),
-      );
       let bal = day.opening;
-      for (const e of byDay[day.date] || []) {
+      for (const e of list) {
         const posted = e.status === "POSTED",
           isIn = e.type === "IN";
         if (posted) bal += isIn ? Number(e.amount) : -Number(e.amount);
         const dim = posted ? {} : { textColor: [170, 170, 170], fontStyle: "italic" };
-        const typeLabel = isIn ? T.IN : T.OUT;
-        body.push(
-          row([
-            { content: pdfTime(e.time), styles: { textColor: MUTED, ...dim } },
-            {
-              content: posted ? typeLabel : `${typeLabel} · ${e.status}`,
-              styles: {
-                fontStyle: "bold",
-                halign: "center",
-                textColor: isIn ? GREEN : RED,
-                ...dim,
-              },
-            },
-            { content: e.category || "", styles: dim },
-            { content: e.counterparty || "", styles: dim },
-            { content: e.description || "", styles: dim },
-            { content: e.reference || "", styles: { textColor: MUTED, ...dim } },
-            {
-              content: isIn ? aed(e.amount) : "",
-              styles: { halign: al("right"), textColor: GREEN, fontStyle: "bold", ...dim },
-            },
-            {
-              content: isIn ? "" : aed(e.amount),
-              styles: { halign: al("right"), textColor: RED, fontStyle: "bold", ...dim },
-            },
-            {
-              content: aed(Math.round(bal * 100) / 100),
-              styles: {
-                halign: al("right"),
-                textColor: bal < 0 ? RED : NAVY,
-                fillColor: [250, 248, 243],
-                ...dim,
-              },
-            },
-          ]),
-        );
+        body.push([
+          { content: timeLabel(e.time), styles: { textColor: C.MUTED, ...dim } },
+          { content: posted ? e.type : `${e.type} · ${e.status}`, styles: { fontStyle: "bold", halign: "center", textColor: isIn ? C.GREEN : C.RED, ...dim } },
+          { content: e.category || "", styles: dim },
+          { content: e.counterparty || "", styles: dim },
+          { content: e.description || "", styles: dim },
+          { content: e.reference || "", styles: { textColor: C.MUTED, ...dim } },
+          { content: isIn ? aed(e.amount) : "", styles: { halign: "right", textColor: C.GREEN, fontStyle: "bold", ...dim } },
+          { content: isIn ? "" : aed(e.amount), styles: { halign: "right", textColor: C.RED, fontStyle: "bold", ...dim } },
+          { content: aed(Math.round(bal * 100) / 100), styles: { halign: "right", textColor: bal < 0 ? C.RED : C.NAVY, fillColor: C.ZEBRA, ...dim } },
+        ]);
       }
-      if (!(byDay[day.date] || []).length)
-        body.push([
-          {
-            content: T.noMoves,
-            colSpan: NCOL,
-            styles: { textColor: MUTED, fontStyle: "italic", halign: "center" },
-          },
-        ]);
-      body.push(
-        row([
-          {
-            content: T.dayTotal,
-            colSpan: 6,
-            styles: { fontStyle: "bold", halign: al("right"), textColor: NAVY },
-          },
-          {
-            content: `+ ${aed(day.cash_in)}`,
-            styles: { halign: al("right"), fontStyle: "bold", textColor: GREEN },
-          },
-          {
-            content: `- ${aed(day.cash_out)}`,
-            styles: { halign: al("right"), fontStyle: "bold", textColor: RED },
-          },
-          { content: "" },
-        ]),
-      );
+      if (!list.length)
+        body.push([{ content: "No cash movements recorded on this day.", colSpan: N, styles: { textColor: C.MUTED, fontStyle: "italic", halign: "center" } }]);
+      body.push([
+        { content: "DAY TOTAL", colSpan: 6, styles: { fontStyle: "bold", halign: "right", textColor: C.NAVY } },
+        { content: `+ ${aed(day.cash_in)}`, styles: { halign: "right", fontStyle: "bold", textColor: C.GREEN } },
+        { content: `- ${aed(day.cash_out)}`, styles: { halign: "right", fontStyle: "bold", textColor: C.RED } },
+        "",
+      ]);
       if (day.counted != null && Math.abs(day.variance) >= 0.01)
-        body.push([
-          {
-            content: T.variance(
-              aed(day.expected),
-              aed(day.counted),
-              `${day.variance > 0 ? "+" : ""}${aed(day.variance)}`,
-            ),
-            colSpan: NCOL,
-            styles: {
-              halign: al("right"),
-              fontStyle: "bold",
-              textColor: day.variance < 0 ? RED : GREEN,
-            },
-          },
-        ]);
-      body.push(
-        row([
-          {
-            content: T.closeRow(next ? shortDay(next.date) : ""),
-            colSpan: 8,
-            styles: {
-              fillColor: GOLD_SOFT,
-              fontStyle: "bold",
-              fontSize: fs(9.4),
-              textColor: [120, 82, 20],
-            },
-          },
-          {
-            content: fa ? aed(day.closing) : money(day.closing),
-            styles: {
-              fillColor: GOLD_SOFT,
-              fontStyle: "bold",
-              fontSize: fs(9.4),
-              halign: al("right"),
-              textColor: day.closing < 0 ? RED : [120, 82, 20],
-            },
-          },
-        ]),
-      );
-      if (next)
-        body.push([
-          {
-            content: "",
-            colSpan: NCOL,
-            styles: { minCellHeight: 5, lineWidth: 0, fillColor: false },
-          },
-        ]);
+        body.push([{
+          content: `EXPECTED ${aed(day.expected)}   ·   COUNTED ${aed(day.counted)}   ·   VARIANCE ${day.variance > 0 ? "+" : ""}${aed(day.variance)}`,
+          colSpan: N,
+          styles: { halign: "right", fontStyle: "bold", textColor: day.variance < 0 ? C.RED : C.GREEN },
+        }]);
+      body.push([
+        { content: `CLOSING CASH   ·   carried forward to ${next ? dayLabel(next.date) : "the next business day"}`, colSpan: 8, styles: { fillColor: C.GOLD_SOFT, fontStyle: "bold", fontSize: r.P ? 8 : 9.4, textColor: C.GOLD_DARK } },
+        { content: money(day.closing), styles: { fillColor: C.GOLD_SOFT, fontStyle: "bold", fontSize: r.P ? 8 : 9.4, halign: "right", textColor: day.closing < 0 ? C.RED : C.GOLD_DARK } },
+      ]);
+      if (next) body.push([{ content: "", colSpan: N, styles: { minCellHeight: 5, lineWidth: 0, fillColor: false } }]);
     });
-
-    const widths = P
-      ? [17, fa ? 15 : 12, fa ? 25 : 23, fa ? 19 : 21, null, 18, 20, 20, 22]
-      : [22, 15, 31, 34, null, 27, 25, 25, 28];
-    const columnStyles = {};
-    widths.forEach((w, i) => {
-      if (w) columnStyles[fa ? NCOL - 1 - i : i] = { cellWidth: w };
-    });
-    autoTable(doc, {
-      ...tableBase,
+    const widths = [17, 12, 23, 21, null, 18, 20, 20, 24];
+    r.table({
       startY: 42,
-      head: [row(T.detHead)],
+      head: [["TIME", "TYPE", "CATEGORY", "PARTY", "DESCRIPTION", "REF.", "CASH IN", "CASH OUT", "BALANCE"]],
       body,
-      rowPageBreak: "avoid",
-      columnStyles,
+      alternateRowStyles: {},
+      columnStyles: Object.fromEntries(widths.map((w, i) => [i, w ? { cellWidth: w } : {}])),
     });
-
-    doc.save(
-      `Northfield_daily_cash_${fa ? "fa_" : ""}${P ? "portrait" : "landscape"}_${from}_${to}.pdf`,
-    );
-    pushToast("Daily cash PDF downloaded successfully.");
+    r.signatures();
+    r.save(`Northfield_daily_cash_${from}_${to}.pdf`);
   }
+
+  // ---------- Daily Closing ----------
+  async function closingPdf(brand) {
+    const r = createLuxuryReport({ brand, title: "DAILY CLOSING REPORT", subtitle: "OPENING  ·  EXPECTED  ·  COUNTED", from, to });
+    const { C } = r;
+    const days = d.entries || [],
+      s = d.summary || {};
+    let y = r.cards([
+      { label: "OPENING CASH", value: money(s.opening_cash), color: C.NAVY2, note: `Start of ${dayLabel(days[0]?.date || from)}` },
+      { label: "TOTAL CASH IN", value: money(s.total_in), color: C.GREEN, note: "All posted receipts" },
+      { label: "TOTAL CASH OUT", value: money(s.total_out), color: C.RED, note: "All posted payments" },
+      { label: "FINAL CASH", value: money(s.final_cash), color: C.GOLD, note: "Carried forward" },
+    ]);
+    const tv = Number(s.total_variance || 0);
+    y = r.cards(
+      [
+        { label: "BUSINESS DAYS", value: String(s.day_count || 0), color: C.NAVY2, note: "Days with activity" },
+        { label: "DAYS CLOSED", value: `${s.finalized_count || 0} / ${s.day_count || 0}`, color: C.GREEN, note: "Counted and finalized" },
+        { label: "TOTAL VARIANCE", value: money(tv), color: tv < 0 ? C.RED : C.GREEN, note: "Counted minus expected" },
+      ],
+      y + 4,
+    );
+    y = r.heading("DAY-BY-DAY CLOSING", "Each day opens with the previous day's closing cash.", y + 10);
+    const body = [];
+    days.forEach((x, i) => {
+      const fin = x.status === "FINALIZED";
+      body.push([
+        { content: dayLabel(x.date), styles: { fontStyle: "bold", textColor: C.NAVY } },
+        dayStatusCell(x.status, C),
+        { content: aed(x.opening), styles: { halign: "right" } },
+        { content: signed(x.cash_in, "+"), styles: { halign: "right", textColor: C.GREEN, fontStyle: "bold" } },
+        { content: signed(x.cash_out, "-"), styles: { halign: "right", textColor: C.RED, fontStyle: "bold" } },
+        { content: aed(x.expected), styles: { halign: "right" } },
+        { content: fin ? aed(x.counted) : "—", styles: { halign: "right", fontStyle: "bold", textColor: fin ? C.NAVY : C.MUTED } },
+        { content: fin ? `${x.variance > 0 ? "+" : ""}${aed(x.variance)}` : "—", styles: { halign: "right", fontStyle: "bold", textColor: !fin ? C.MUTED : x.variance < 0 ? C.RED : x.variance > 0 ? C.GREEN : C.NAVY } },
+        { content: aed(x.closing), styles: { halign: "right", fontStyle: "bold", textColor: x.closing < 0 ? C.RED : C.NAVY, fillColor: C.GOLD_SOFT } },
+      ]);
+      if (x.note)
+        body.push([{ content: `Manager note: ${x.note}`, colSpan: 9, styles: { fontStyle: "italic", textColor: C.MUTED, fillColor: C.ZEBRA } }]);
+    });
+    r.table({
+      startY: y,
+      head: [["DATE", "STATUS", "OPENING", "CASH IN", "CASH OUT", "EXPECTED", "COUNTED", "VARIANCE", "CLOSING"]],
+      body,
+      foot: [[
+        { content: `${days.length} DAYS`, colSpan: 2 },
+        { content: aed(s.opening_cash), styles: { halign: "right" } },
+        { content: `+ ${aed(s.total_in)}`, styles: { halign: "right" } },
+        { content: `- ${aed(s.total_out)}`, styles: { halign: "right" } },
+        "",
+        "",
+        { content: `${tv > 0 ? "+" : ""}${aed(tv)}`, styles: { halign: "right" } },
+        { content: aed(s.final_cash), styles: { halign: "right" } },
+      ]],
+      columnStyles: { 0: { cellWidth: 21 }, 1: { cellWidth: 17 } },
+    });
+    r.signatures(["CASHIER", "MANAGER", "APPROVED BY"]);
+    r.save(`Northfield_daily_closing_${from}_${to}.pdf`);
+  }
+
+  // ---------- Emirates Islamic (bank) ----------
+  async function bankPdf(brand) {
+    const account = d.entries[0]?.account || "Emirates Islamic";
+    const r = createLuxuryReport({ brand, title: "BANK STATEMENT REPORT", subtitle: account.toUpperCase(), from, to });
+    const { C } = r;
+    const s = d.summary || {},
+      opening = Number(s.opening_balance || 0);
+    let y = r.cards([
+      { label: "OPENING BALANCE", value: money(opening), color: C.NAVY2, note: `Start of ${dayLabel(from)}` },
+      { label: "MONEY IN", value: money(s.total_in), color: C.GREEN, note: "Deposits and receipts" },
+      { label: "MONEY OUT", value: money(s.total_out), color: C.RED, note: "Payments and withdrawals" },
+      { label: "CLOSING BALANCE", value: money(s.closing_balance ?? opening + Number(s.balance || 0)), color: C.GOLD, note: `End of ${dayLabel(to)}` },
+    ]);
+    y = r.heading("ACCOUNT ACTIVITY", "Running balance after every posted entry.", y + 10);
+    let bal = opening,
+      lastDay = "";
+    const body = [[
+      { content: "OPENING BALANCE", colSpan: 8, styles: { fillColor: C.BLUE_SOFT, fontStyle: "bold", textColor: C.NAVY2 } },
+      { content: aed(opening), styles: { fillColor: C.BLUE_SOFT, fontStyle: "bold", halign: "right", textColor: C.NAVY2 } },
+    ]];
+    for (const e of d.entries) {
+      const posted = e.status === "POSTED",
+        isIn = e.type === "IN",
+        k = String(e.date).slice(0, 10);
+      if (posted) bal += isIn ? Number(e.amount) : -Number(e.amount);
+      const dim = posted ? {} : { textColor: [170, 170, 170], fontStyle: "italic" };
+      body.push([
+        { content: k === lastDay ? "" : dayLabel(k), styles: { fontStyle: "bold", textColor: C.NAVY, ...dim } },
+        { content: posted ? e.type : `${e.type} · ${e.status}`, styles: { fontStyle: "bold", halign: "center", textColor: isIn ? C.GREEN : C.RED, ...dim } },
+        { content: e.category || "", styles: dim },
+        { content: e.counterparty || "", styles: dim },
+        { content: e.description || "", styles: dim },
+        { content: e.reference || "", styles: { textColor: C.MUTED, ...dim } },
+        { content: isIn ? aed(e.amount) : "", styles: { halign: "right", textColor: C.GREEN, fontStyle: "bold", ...dim } },
+        { content: isIn ? "" : aed(e.amount), styles: { halign: "right", textColor: C.RED, fontStyle: "bold", ...dim } },
+        { content: aed(Math.round(bal * 100) / 100), styles: { halign: "right", textColor: bal < 0 ? C.RED : C.NAVY, fillColor: C.GOLD_SOFT, ...dim } },
+      ]);
+      lastDay = k;
+    }
+    if (!d.entries.length)
+      body.push([{ content: "No bank activity in this period.", colSpan: 9, styles: { textColor: C.MUTED, fontStyle: "italic", halign: "center" } }]);
+    r.table({
+      startY: y,
+      head: [["DATE", "TYPE", "CATEGORY", "PARTY", "DESCRIPTION", "REF.", "IN", "OUT", "BALANCE"]],
+      body,
+      foot: [[
+        { content: `${d.entries.length} ENTRIES`, colSpan: 6 },
+        { content: aed(s.total_in), styles: { halign: "right" } },
+        { content: aed(s.total_out), styles: { halign: "right" } },
+        { content: aed(Math.round(bal * 100) / 100), styles: { halign: "right" } },
+      ]],
+      columnStyles: { 0: { cellWidth: 19 }, 1: { cellWidth: 12 }, 2: { cellWidth: 24 }, 3: { cellWidth: 22 }, 5: { cellWidth: 18 }, 6: { cellWidth: 19 }, 7: { cellWidth: 19 }, 8: { cellWidth: 22 } },
+    });
+    r.signatures();
+    r.save(`Northfield_bank_${from}_${to}.pdf`);
+  }
+
+  // ---------- Iran / Dubai transfers ----------
+  async function transferPdf(brand) {
+    const r = createLuxuryReport({ brand, title: "IRAN / DUBAI TRANSFERS", subtitle: "AED  ·  IRR  ·  EXCHANGE RATE", from, to, orientation: "landscape" });
+    const { C } = r;
+    const s = d.summary || {},
+      posted = d.entries.filter((x) => x.status === "POSTED"),
+      dirSum = (dir) => posted.filter((x) => x.type === dir).reduce((t, x) => t + Number(x.amount_aed || 0), 0),
+      irr = (n) => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 }),
+      rate = Number(s.total_aed) ? Number(s.total_irr) / Number(s.total_aed) : 0;
+    let y = r.cards([
+      { label: "TOTAL AED", value: money(s.total_aed), color: C.NAVY2, note: "All posted transfers" },
+      { label: "IRAN TO DUBAI", value: money(dirSum("IRAN_TO_DUBAI")), color: C.GREEN, note: "Received in Dubai" },
+      { label: "DUBAI TO IRAN", value: money(dirSum("DUBAI_TO_IRAN")), color: C.RED, note: "Sent to Iran" },
+      { label: "TOTAL IRR", value: `IRR ${irr(s.total_irr)}`, color: C.GOLD, note: `${s.record_count || 0} records · avg rate ${irr(rate)}` },
+    ]);
+    y = r.heading("TRANSFER REGISTER", "Every transfer with its exchange rate and parties.", y + 10);
+    let lastDay = "";
+    const body = d.entries.map((e) => {
+      const k = String(e.date).slice(0, 10),
+        ok = e.status === "POSTED",
+        dim = ok ? {} : { textColor: [170, 170, 170], fontStyle: "italic" },
+        toDubai = e.type === "IRAN_TO_DUBAI";
+      const row = [
+        { content: k === lastDay ? "" : dayLabel(k), styles: { fontStyle: "bold", textColor: C.NAVY, ...dim } },
+        { content: toDubai ? "IRAN TO DUBAI" : e.type === "DUBAI_TO_IRAN" ? "DUBAI TO IRAN" : String(e.type || "").replaceAll("_", " "), styles: { fontStyle: "bold", textColor: toDubai ? C.GREEN : C.RED, ...dim } },
+        { content: aed(e.amount_aed), styles: { halign: "right", fontStyle: "bold", textColor: C.NAVY, fillColor: C.GOLD_SOFT, ...dim } },
+        { content: irr(e.amount_irr), styles: { halign: "right", ...dim } },
+        { content: irr(e.exchange_rate), styles: { halign: "right", textColor: C.MUTED, ...dim } },
+        { content: e.sender || "", styles: dim },
+        { content: e.receiver || "", styles: dim },
+        { content: e.channel || "", styles: dim },
+        { content: e.reference || "", styles: { textColor: C.MUTED, ...dim } },
+        { content: e.description || "", styles: dim },
+        { content: e.status || "", styles: { halign: "center", fontStyle: "bold", textColor: ok ? C.GREEN : C.MUTED } },
+      ];
+      lastDay = k;
+      return row;
+    });
+    if (!body.length)
+      body.push([{ content: "No transfers in this period.", colSpan: 11, styles: { textColor: C.MUTED, fontStyle: "italic", halign: "center" } }]);
+    r.table({
+      startY: y,
+      head: [["DATE", "DIRECTION", "AED", "IRR", "RATE", "SENDER", "RECEIVER", "CHANNEL", "REF.", "DESCRIPTION", "STATUS"]],
+      body,
+      foot: [[
+        { content: `${d.entries.length} TRANSFERS`, colSpan: 2 },
+        { content: aed(s.total_aed), styles: { halign: "right" } },
+        { content: irr(s.total_irr), styles: { halign: "right" } },
+        { content: irr(rate), styles: { halign: "right" } },
+        { content: "", colSpan: 6 },
+      ]],
+      columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 26 }, 2: { cellWidth: 24 }, 3: { cellWidth: 30 }, 4: { cellWidth: 18 }, 10: { cellWidth: 18 } },
+    });
+    r.signatures();
+    r.save(`Northfield_iran_dubai_${from}_${to}.pdf`);
+  }
+
   async function pdf() {
     try {
-      if (scope === "cash" && d.days) return await cashDailyPdf();
-      const settings = await fetch("/api/public-settings", {
-        cache: "no-store",
-      }).then((r) => r.json());
-      const logoUrl = settings.company_logo || "/northfield-logo.png";
-      const [logo, watermark] = await Promise.all([
-        imageData(logoUrl),
-        imageData(logoUrl, 0.045),
-      ]);
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-      const width = doc.internal.pageSize.getWidth(),
-        height = doc.internal.pageSize.getHeight();
-      const company =
-          settings.company_name || "Northfield Veterinary Clinic L.L.C",
-        address = settings.company_address || "United Arab Emirates";
-      const keys = Object.keys(d.entries[0] || {}),
-        rows = d.entries.map((row) =>
-          keys.map((key) => pdfCell(key, row[key])),
-        );
-      const summary = d.summary || {},
-        running = Number(
-          summary.running_cash ?? summary.balance ?? summary.total_aed ?? 0,
-        );
-      const cards = [
-        [
-          scope === "transfer"
-            ? "TOTAL AED"
-            : scope === "closing"
-              ? "OPENING CASH"
-              : "OPENING / DAYS",
-          Number(
-            summary.opening_cash ?? summary.day_count ?? summary.total_aed ?? 0,
-          ),
-          [43, 102, 157],
-        ],
-        [
-          scope === "transfer" ? "TOTAL IRR" : "TOTAL IN",
-          Number(summary.total_irr ?? summary.total_in ?? 0),
-          [26, 135, 108],
-        ],
-        ["TOTAL OUT", Number(summary.total_out ?? 0), [192, 79, 67]],
-        [
-          scope === "transfer"
-            ? "RECORDS"
-            : scope === "closing"
-              ? "FINAL CASH"
-              : "BALANCE",
-          scope === "transfer"
-            ? Number(summary.record_count || 0)
-            : scope === "closing"
-              ? Number(summary.final_cash || 0)
-              : running,
-          [205, 145, 44],
-        ],
-      ];
-      const drawChrome = (data) => {
-        doc.setDrawColor(218, 154, 44);
-        doc.setLineWidth(0.45);
-        doc.roundedRect(7, 7, width - 14, height - 14, 2.4, 2.4);
-        doc.setDrawColor(229, 216, 188);
-        doc.setLineWidth(0.2);
-        doc.roundedRect(9, 9, width - 18, height - 18, 2, 2);
-        doc.addImage(watermark, "PNG", width / 2 - 48, height / 2 - 22, 96, 44);
-        doc.addImage(logo, "PNG", 13, 13, 39, 18);
-        doc.setTextColor(9, 39, 59);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(13);
-        doc.text(company.toUpperCase(), width / 2, 17, {
-          align: "center",
-          maxWidth: 92,
-        });
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(6.4);
-        doc.setTextColor(104, 119, 128);
-        doc.text(address, width / 2, 28, { align: "center", maxWidth: 92 });
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.setTextColor(9, 39, 59);
-        doc.text(names[scope].toUpperCase(), width - 13, 17, {
-          align: "right",
-        });
-        doc.text(`${periodLabel.toUpperCase()} REPORT`, width - 13, 22, {
-          align: "right",
-        });
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(6.4);
-        doc.setTextColor(116, 130, 139);
-        doc.text(`${from}  -  ${to}`, width - 13, 29, { align: "right" });
-        doc.setDrawColor(218, 154, 44);
-        doc.setLineWidth(0.7);
-        doc.line(13, 35, width - 13, 35);
-        if (data.pageNumber === 1) {
-          const gap = 1.5,
-            cardW = (width - 26 - gap * 3) / 4,
-            y = 41;
-          cards.forEach((card, i) => {
-            const x = 13 + i * (cardW + gap);
-            doc.setFillColor(250, 249, 246);
-            doc.setDrawColor(224, 216, 199);
-            doc.setLineWidth(0.25);
-            doc.roundedRect(x, y, cardW, 23, 1.2, 1.2, "FD");
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(5.2);
-            doc.setTextColor(112, 128, 137);
-            doc.text(card[0], x + cardW / 2, y + 7, { align: "center" });
-            doc.setFontSize(9);
-            doc.setTextColor(...card[2]);
-            doc.text(
-              `AED ${card[1].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-              x + cardW / 2,
-              y + 16,
-              { align: "center" },
-            );
-          });
-        }
-      };
-      autoTable(doc, {
-        startY: 72,
-        margin: { top: 42, left: 13, right: 13, bottom: 17 },
-        head: [keys.map((k) => k.replaceAll("_", " ").toUpperCase())],
-        body: rows,
-        theme: "grid",
-        styles: {
-          font: "helvetica",
-          fontSize: 5.1,
-          textColor: [45, 68, 81],
-          lineColor: [224, 229, 230],
-          lineWidth: 0.18,
-          cellPadding: 1.35,
-          overflow: "linebreak",
-          valign: "middle",
-        },
-        headStyles: {
-          fillColor: [8, 42, 63],
-          textColor: [246, 211, 137],
-          fontStyle: "bold",
-          fontSize: 4.9,
-          lineColor: [8, 42, 63],
-          minCellHeight: 7,
-        },
-        alternateRowStyles: { fillColor: [248, 250, 249] },
-        columnStyles: {
-          0: { cellWidth: 18 },
-          1: { cellWidth: 14 },
-          2: { cellWidth: 10 },
-          7: { halign: "right" },
-          8: { cellWidth: 16 },
-        },
-        willDrawPage: drawChrome,
-        didDrawPage: (data) => {
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(5.8);
-          doc.setTextColor(124, 139, 147);
-          doc.text(
-            "Prepared by Northfield Financial Control Suite",
-            width / 2,
-            height - 12,
-            { align: "center" },
-          );
-          doc.setTextColor(181, 137, 61);
-          doc.text(
-            "NORTHFIELD VETERINARY CLINIC L.L.C  ·  CONFIDENTIAL CASH CONTROL RECORD",
-            width / 2,
-            height - 8.5,
-            { align: "center" },
-          );
-          doc.setTextColor(118, 132, 140);
-          doc.text(`PAGE ${data.pageNumber}`, width - 13, height - 11, {
-            align: "right",
-          });
-        },
-      });
-      doc.save(`Northfield_${scope}_${period}_${from}_${to}.pdf`);
-      pushToast("Branded executive PDF downloaded successfully.");
+      const brand = await loadBrand();
+      if (scope === "closing") await closingPdf(brand);
+      else if (scope === "bank") await bankPdf(brand);
+      else if (scope === "transfer") await transferPdf(brand);
+      else await cashDailyPdf(brand);
+      pushToast("Luxury PDF downloaded successfully.");
     } catch (e) {
       pushToast(`PDF could not be created: ${e.message}`, "error");
     }
@@ -4596,163 +4164,62 @@ function AttendanceAdmin() {
     );
   }
   async function pdfReport() {
-    const doc = new jsPDF({ orientation: "landscape" });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    doc.setFillColor(6, 35, 52);
-    doc.roundedRect(8, 8, pageWidth - 16, 35, 4, 4, "F");
-    try {
-      const logo = await imageData("/northfield-logo.png");
-      doc.addImage(logo, "PNG", 14, 13, 29, 24);
-    } catch {}
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(19);
-    doc.text("STAFF TIME & ATTENDANCE", 49, 22);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(162, 200, 211);
-    doc.text(
-      `${siteEdit?.siteName || "Northfield Clinic"}  |  ${filters.from} to ${filters.to}`,
-      49,
-      29,
-    );
-    const completed = (d.summary || []).filter((x) => x.worked_minutes != null),
-      totalMinutes = completed.reduce(
-        (sum, x) => sum + Number(x.worked_minutes || 0),
-        0,
-      ),
-      lateMinutes = completed.reduce(
-        (sum, x) => sum + Number(x.late_minutes || 0),
-        0,
-      ),
-      overtimeMinutes = completed.reduce(
-        (sum, x) => sum + Number(x.overtime_minutes || 0),
-        0,
-      ),
-      cards = [
-        [
-          "TOTAL WORKED",
-          `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`,
-        ],
-        ["LATE TIME", `${lateMinutes} min`],
-        ["OVERTIME", `${overtimeMinutes} min`],
-        ["COMPLETED DAYS", String(completed.length)],
-      ];
-    cards.forEach(([label, value], index) => {
-      const x = 9 + index * ((pageWidth - 18) / 4),
-        width = (pageWidth - 24) / 4;
-      doc.setFillColor(
-        index === 0 ? 225 : 242,
-        index === 0 ? 247 : 247,
-        index === 0 ? 240 : 249,
-      );
-      doc.setDrawColor(202, 222, 228);
-      doc.roundedRect(x, 48, width, 20, 3, 3, "FD");
-      doc.setTextColor(91, 119, 131);
-      doc.setFontSize(7);
-      doc.setFont("helvetica", "bold");
-      doc.text(label, x + 5, 55);
-      doc.setTextColor(8, 45, 64);
-      doc.setFontSize(12);
-      doc.text(value, x + 5, 64);
+    const brand = await loadBrand();
+    const r = createLuxuryReport({
+      brand,
+      title: "STAFF TIME & ATTENDANCE",
+      subtitle: (siteEdit?.siteName || "Northfield Clinic").toUpperCase(),
+      from: filters.from,
+      to: filters.to,
     });
-    autoTable(doc, {
-      startY: 75,
-      head: [
-        [
-          "Date",
-          "Employee",
-          "Clock In",
-          "Clock Out",
-          "Worked",
-          "Late",
-          "Overtime",
-        ],
-      ],
-      body: (d.summary || []).map((x) => [
-        String(x.work_date).slice(0, 10),
-        x.display_name,
-        attendanceTime(x.clock_in),
-        attendanceTime(x.clock_out),
-        x.worked_minutes == null
-          ? "Open"
-          : `${Math.floor(x.worked_minutes / 60)}h ${x.worked_minutes % 60}m`,
-        `${x.late_minutes || 0}m`,
-        `${x.overtime_minutes || 0}m`,
-      ]),
-      styles: {
-        fontSize: 8,
-        cellPadding: 3.2,
-        textColor: [37, 67, 81],
-        lineColor: [214, 229, 234],
-        lineWidth: 0.15,
-      },
-      headStyles: {
-        fillColor: [9, 64, 83],
-        textColor: [255, 255, 255],
-        fontStyle: "bold",
-      },
-      alternateRowStyles: { fillColor: [244, 249, 250] },
-      didDrawPage: () => {
-        const h = doc.internal.pageSize.getHeight();
-        doc.setDrawColor(20, 106, 126);
-        doc.setLineWidth(0.5);
-        doc.rect(7, 7, pageWidth - 14, h - 14);
-        doc.setTextColor(112, 137, 147);
-        doc.setFontSize(7);
-        doc.text(
-          `Northfield Staff Control · Generated ${new Date().toLocaleString()}`,
-          10,
-          h - 9,
-        );
-      },
+    const { C } = r;
+    const rows = d.summary || [],
+      completed = rows.filter((x) => x.worked_minutes != null),
+      sum = (k) => completed.reduce((t, x) => t + Number(x[k] || 0), 0),
+      hm = (m) => `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`,
+      totalMinutes = sum("worked_minutes"),
+      lateMinutes = sum("late_minutes"),
+      overtimeMinutes = sum("overtime_minutes");
+    const scopeName =
+      filters.userId === "0"
+        ? "All employees"
+        : d.staff.find((x) => String(x.id) === String(filters.userId))
+            ?.display_name || "Selected employee";
+    let y = r.cards([
+      { label: "TOTAL WORKED", value: hm(totalMinutes), color: C.NAVY2, note: `${completed.length} completed shifts` },
+      { label: "LATE TIME", value: `${lateMinutes} min`, color: C.RED, note: "Arrivals after grace time" },
+      { label: "OVERTIME", value: `${overtimeMinutes} min`, color: C.GREEN, note: "Beyond scheduled hours" },
+      { label: "OPEN SHIFTS", value: String(rows.length - completed.length), color: C.GOLD, note: "Clocked in, not out" },
+    ]);
+    y = r.heading("ATTENDANCE REGISTER", `Scope: ${scopeName}  ·  Dubai local time`, y + 10);
+    let lastDay = "";
+    r.table({
+      startY: y,
+      head: [["DATE", "EMPLOYEE", "CLOCK IN", "CLOCK OUT", "WORKED", "LATE", "OVERTIME"]],
+      body: rows.map((x) => {
+        const k = String(x.work_date).slice(0, 10),
+          open = x.worked_minutes == null,
+          row = [
+            { content: k === lastDay ? "" : dayLabel(k), styles: { fontStyle: "bold", textColor: C.NAVY } },
+            { content: x.display_name || "", styles: { fontStyle: "bold" } },
+            { content: attendanceTime(x.clock_in), styles: { halign: "center" } },
+            { content: attendanceTime(x.clock_out), styles: { halign: "center" } },
+            { content: open ? "OPEN" : hm(Number(x.worked_minutes)), styles: { halign: "right", fontStyle: "bold", textColor: open ? C.GOLD : C.NAVY, fillColor: C.GOLD_SOFT } },
+            { content: Number(x.late_minutes) ? `${x.late_minutes} min` : "—", styles: { halign: "right", textColor: Number(x.late_minutes) ? C.RED : C.MUTED } },
+            { content: Number(x.overtime_minutes) ? `${x.overtime_minutes} min` : "—", styles: { halign: "right", textColor: Number(x.overtime_minutes) ? C.GREEN : C.MUTED } },
+          ];
+        lastDay = k;
+        return row;
+      }),
+      foot: [[
+        { content: `${rows.length} RECORDS`, colSpan: 4 },
+        { content: hm(totalMinutes), styles: { halign: "right" } },
+        { content: `${lateMinutes} min`, styles: { halign: "right" } },
+        { content: `${overtimeMinutes} min`, styles: { halign: "right" } },
+      ]],
     });
-    const detailsY = Math.min((doc.lastAutoTable?.finalY || 75) + 10, 138),
-      reportHeight = 34;
-    doc.setFillColor(7, 37, 54);
-    doc.roundedRect(9, detailsY, pageWidth - 18, reportHeight, 4, 4, "F");
-    doc.setFillColor(25, 171, 139);
-    doc.roundedRect(9, detailsY, 3, reportHeight, 1, 1, "F");
-    doc.setTextColor(238, 249, 251);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("ATTENDANCE CONTROL SUMMARY", 18, detailsY + 9);
-    doc.setTextColor(154, 187, 199);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.text(
-      `Report scope: ${filters.userId === "0" ? "All employees" : d.staff.find((x) => String(x.id) === String(filters.userId))?.display_name || "Selected employee"}`,
-      18,
-      detailsY + 17,
-    );
-    doc.text(
-      `Workplace: ${siteEdit?.siteName || "Northfield Clinic"}`,
-      18,
-      detailsY + 23,
-    );
-    doc.text(
-      "Calculation: Actual elapsed time from Clock In to Clock Out · Dubai local time",
-      18,
-      detailsY + 29,
-    );
-    const signatureX = pageWidth - 90;
-    doc.setDrawColor(89, 128, 143);
-    doc.line(signatureX, detailsY + 22, signatureX + 31, detailsY + 22);
-    doc.line(signatureX + 39, detailsY + 22, signatureX + 70, detailsY + 22);
-    doc.setTextColor(164, 193, 202);
-    doc.setFontSize(7);
-    doc.text("PREPARED BY", signatureX, detailsY + 28);
-    doc.text("MANAGER APPROVAL", signatureX + 39, detailsY + 28);
-    doc.setTextColor(8, 53, 71);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.text(
-      "CONFIDENTIAL · AUTHORIZED STAFF USE ONLY",
-      pageWidth / 2,
-      detailsY + 43,
-      { align: "center" },
-    );
-    doc.save(`Northfield-Attendance-${filters.from}-${filters.to}.pdf`);
+    r.signatures(["PREPARED BY", "MANAGER APPROVAL"]);
+    r.save(`Northfield-Attendance-${filters.from}-${filters.to}.pdf`);
   }
   if (!d) return <Loading />;
   const selectedStaff = d.staff.find(

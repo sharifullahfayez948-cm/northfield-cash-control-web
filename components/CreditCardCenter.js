@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarClock, CheckCircle2, CreditCard, FileDown, History, Plus, Receipt, Settings2, WalletCards, X } from "lucide-react";
 import * as XLSX from "xlsx";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { aed, createLuxuryReport, dayLabel, loadBrand, money as luxMoney } from "@/lib/luxuryPdf";
 
 const today = () => new Date().toISOString().slice(0,10);
 const monthStart = () => `${today().slice(0,7)}-01`;
@@ -83,14 +82,34 @@ export default function CreditCardCenter({user}) {
     const summary=XLSX.utils.aoa_to_sheet([["NORTHFIELD CREDIT CARD REPORT"],[`${range.from} to ${range.to}`],[],["Outstanding",data.account.outstanding_balance],["Available Credit",data.account.available_credit],["Period Charges",reportSummary.charges],["Period Payments",reportSummary.payments],["Period Refunds",reportSummary.refunds]]);
     XLSX.utils.book_append_sheet(workbook,summary,"Summary");XLSX.utils.book_append_sheet(workbook,XLSX.utils.json_to_sheet(rows),"Card Ledger");XLSX.writeFile(workbook,`Northfield_Credit_Card_${range.from}_${range.to}.xlsx`);
   }
-  function pdf() {
-    const doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
-    doc.setTextColor(11,48,70);doc.setFont("helvetica","bold");doc.setFontSize(17);doc.text("NORTHFIELD VETERINARY CLINIC L.L.C",14,17);
-    doc.setFontSize(12);doc.text("CREDIT CARD LEDGER",14,25);doc.setFont("helvetica","normal");doc.setFontSize(8);doc.text(`${range.from} to ${range.to}`,14,31);
-    doc.text(`Outstanding: ${money(data.account.outstanding_balance)}   Available: ${money(data.account.available_credit)}   Payments: ${money(reportSummary.payments)}`,14,38);
-    const keys=["date","type","category","merchant","reference","amount","status"];
-    autoTable(doc,{startY:44,head:[keys.map(x=>x.toUpperCase())],body:rows.map(row=>keys.map(key=>key==="date"?dateLabel(row[key]):key==="amount"?money(row[key]):row[key]||"")),theme:"grid",headStyles:{fillColor:[10,48,70],textColor:[246,207,124]},styles:{fontSize:7,cellPadding:2},didDrawPage:info=>{doc.setFontSize(7);doc.setTextColor(110);doc.text(`Generated ${new Date().toLocaleString("en-GB")} · Page ${info.pageNumber}`,14,199)}});
-    doc.save(`Northfield_Credit_Card_${range.from}_${range.to}.pdf`);
+  async function pdf() {
+    const brand=await loadBrand();
+    const r=createLuxuryReport({brand,title:"CREDIT CARD STATEMENT",subtitle:[data.account.name,data.account.last_four?`CARD ${data.account.last_four}`:""].filter(Boolean).join("  ·  ").toUpperCase(),from:range.from,to:range.to});
+    const {C}=r;
+    let y=r.cards([
+      {label:"OUTSTANDING",value:luxMoney(data.account.outstanding_balance),color:C.RED,note:`Available ${luxMoney(data.account.available_credit)}`},
+      {label:"CHARGES",value:luxMoney(reportSummary.charges),color:C.NAVY2,note:"Purchases, interest and fees"},
+      {label:"PAYMENTS",value:luxMoney(reportSummary.payments),color:C.GREEN,note:"Settled to the card"},
+      {label:"REFUNDS",value:luxMoney(reportSummary.refunds),color:C.GOLD,note:"Credited back"},
+    ]);
+    y=r.heading("CARD LEDGER",`Credit limit ${luxMoney(data.account.credit_limit)}`,y+10);
+    const credit=t=>["PAYMENT","REFUND"].includes(t);
+    let lastDay="";
+    r.table({startY:y,
+      head:[["DATE","TYPE","CATEGORY","MERCHANT / BANK","REFERENCE","CHARGE","CREDIT","STATUS"]],
+      body:rows.length?rows.map(row=>{const k=String(row.date).slice(0,10),ok=row.status==="POSTED",dim=ok?{}:{textColor:[170,170,170],fontStyle:"italic"},cr=credit(row.type);
+        const out=[{content:k===lastDay?"":dayLabel(k),styles:{fontStyle:"bold",textColor:C.NAVY,...dim}},
+          {content:row.type.replaceAll("_"," "),styles:{fontStyle:"bold",textColor:cr?C.GREEN:C.RED,...dim}},
+          {content:row.category||"",styles:dim},{content:row.merchant||"",styles:dim},{content:row.reference||"",styles:{textColor:C.MUTED,...dim}},
+          {content:cr?"":aed(row.amount),styles:{halign:"right",fontStyle:"bold",textColor:C.RED,...dim}},
+          {content:cr?aed(row.amount):"",styles:{halign:"right",fontStyle:"bold",textColor:C.GREEN,...dim}},
+          {content:row.status,styles:{halign:"center",fontStyle:"bold",textColor:ok?C.GREEN:C.MUTED}}];
+        lastDay=k;return out;})
+        :[[{content:"No card transactions in this period.",colSpan:8,styles:{textColor:C.MUTED,fontStyle:"italic",halign:"center"}}]],
+      foot:[[{content:`${rows.length} TRANSACTIONS`,colSpan:5},{content:aed(reportSummary.charges),styles:{halign:"right"}},{content:aed(reportSummary.payments+reportSummary.refunds),styles:{halign:"right"}},""]],
+      columnStyles:{0:{cellWidth:20},1:{cellWidth:20},5:{cellWidth:22},6:{cellWidth:22},7:{cellWidth:17}}});
+    r.signatures();
+    r.save(`Northfield_Credit_Card_${range.from}_${range.to}.pdf`);
   }
 
   if (!data) return <div className="loading"><span className="spinner"/>Loading…</div>;
