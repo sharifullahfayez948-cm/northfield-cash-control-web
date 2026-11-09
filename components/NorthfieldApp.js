@@ -50,6 +50,8 @@ import {
 } from "lucide-react";
 import FayezSignature from "@/components/FayezSignature";
 import CreditCardCenter from "@/components/CreditCardCenter";
+import CommerceCenter from "@/components/CommerceCenter";
+import AccountCenter from "@/components/AccountCenter";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -209,7 +211,16 @@ function displayCell(key, value) {
     );
   if (
     key.includes("amount") ||
-    ["cash_in", "cash_out", "balance", "opening_cash", "opening", "closing", "expected", "variance"].includes(key)
+    [
+      "cash_in",
+      "cash_out",
+      "balance",
+      "opening_cash",
+      "opening",
+      "closing",
+      "expected",
+      "variance",
+    ].includes(key)
   )
     return (
       <b className="amountCell">
@@ -376,6 +387,25 @@ function CashEntryActions({ row, categories, onChanged }) {
       [form.direction, "BOTH"].includes(c.direction) &&
       ["CASH", "BOTH"].includes(c.account_scope),
   );
+  if (String(row.transfer_group || "").startsWith("SP-")) {
+    return (
+      <button
+        className="btn btnSoft"
+        onClick={() =>
+          window.dispatchEvent(
+            new CustomEvent("northfield:open-invoice", {
+              detail: {
+                id: row.transfer_group.split("-")[1],
+                kind: row.direction === "IN" ? "SALE" : "PURCHASE",
+              },
+            }),
+          )
+        }
+      >
+        Open linked invoice
+      </button>
+    );
+  }
   return (
     <>
       <div className="luxActions">
@@ -1320,22 +1350,95 @@ function TransactionPage() {
 
 function Movements() {
   const [date, setDate] = useState(today()),
-    [d, setD] = useState();
-  const load = () => api(`/api/transactions?date=${date}`).then(setD);
+    [d, setD] = useState(),
+    [search, setSearch] = useState(""),
+    [all, setAll] = useState(false),
+    [page, setPage] = useState(1),
+    [error, setError] = useState(""),
+    [refresh, setRefresh] = useState(0);
+  const load = () => setRefresh((x) => x + 1);
   useEffect(() => {
-    load();
-  }, [date]);
+    setPage(1);
+  }, [date, search, all]);
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(
+      () =>
+        api(
+          `/api/transactions?${new URLSearchParams({ date, search, all: all ? "1" : "0", page })}`,
+        )
+          .then((data) => {
+            if (active) {
+              setD(data);
+              setError("");
+            }
+          })
+          .catch((e) => {
+            if (active) setError(e.message);
+          }),
+      180,
+    );
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [date, search, all, page, refresh]);
   return (
     <>
       <PageHead
         title="Money Movements"
-        sub="Review, edit, void and restore cash entries securely."
+        sub="Search cash entries and open linked invoices for corrections."
         date={date}
         setDate={setDate}
       />
+      <div className="spWorkspace">
+        <div className="spFilters">
+          <label className="spField spSearch">
+            <span>Search transactions</span>
+            <input
+              placeholder="Customer, doctor, invoice, reference, category or amount"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+          <button
+            className={`btn ${all ? "btnPrimary" : "btnSoft"}`}
+            onClick={() => setAll(!all)}
+          >
+            {all ? "All history" : "Selected date"}
+          </button>
+        </div>
+        {error && (
+          <p className="spAlert" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
       <div className="card">
         {d ? <CashJournal data={d} onChanged={load} /> : <Loading />}
       </div>
+      {d && (
+        <div className="spPagination">
+          <button
+            className="btn btnSoft"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            Previous
+          </button>
+          <span>
+            Page {page} of {Math.max(1, Math.ceil(Number(d.count || 0) / 100))}{" "}
+            · {d.count || 0} entries
+          </span>
+          <button
+            className="btn btnSoft"
+            disabled={page * 100 >= Number(d.count || 0)}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -2869,13 +2972,34 @@ function ReportsV2() {
     const days = d.days || [],
       s = d.summary || {};
     const byDay = {};
-    for (const e of d.entries) (byDay[String(e.date).slice(0, 10)] ||= []).push(e);
+    for (const e of d.entries)
+      (byDay[String(e.date).slice(0, 10)] ||= []).push(e);
 
     let y = r.cards([
-      { label: "OPENING CASH", value: money(s.opening_cash), color: C.NAVY2, note: `Start of ${dayLabel(days[0]?.date || from)}` },
-      { label: "TOTAL CASH IN", value: money(s.total_in), color: C.GREEN, note: "All posted receipts" },
-      { label: "TOTAL CASH OUT", value: money(s.total_out), color: C.RED, note: "All posted payments" },
-      { label: "CLOSING CASH", value: money(s.running_cash), color: C.GOLD, note: "Carried forward" },
+      {
+        label: "OPENING CASH",
+        value: money(s.opening_cash),
+        color: C.NAVY2,
+        note: `Start of ${dayLabel(days[0]?.date || from)}`,
+      },
+      {
+        label: "TOTAL CASH IN",
+        value: money(s.total_in),
+        color: C.GREEN,
+        note: "All posted receipts",
+      },
+      {
+        label: "TOTAL CASH OUT",
+        value: money(s.total_out),
+        color: C.RED,
+        note: "All posted payments",
+      },
+      {
+        label: "CLOSING CASH",
+        value: money(s.running_cash),
+        color: C.GOLD,
+        note: "Carried forward",
+      },
     ]);
     y = r.heading(
       "DAY-BY-DAY CASH FLOW",
@@ -2884,24 +3008,58 @@ function ReportsV2() {
     );
     r.table({
       startY: y,
-      head: [["DATE", "DAY STATUS", "OPENING", "CASH IN", "CASH OUT", "CLOSING", "CARRIED TO"]],
+      head: [
+        [
+          "DATE",
+          "DAY STATUS",
+          "OPENING",
+          "CASH IN",
+          "CASH OUT",
+          "CLOSING",
+          "CARRIED TO",
+        ],
+      ],
       body: days.map((x, i) => [
-        { content: dayLabel(x.date), styles: { fontStyle: "bold", textColor: C.NAVY } },
+        {
+          content: dayLabel(x.date),
+          styles: { fontStyle: "bold", textColor: C.NAVY },
+        },
         dayStatusCell(x.status, C),
         { content: aed(x.opening), styles: { halign: "right" } },
-        { content: signed(x.cash_in, "+"), styles: { halign: "right", textColor: C.GREEN, fontStyle: "bold" } },
-        { content: signed(x.cash_out, "-"), styles: { halign: "right", textColor: C.RED, fontStyle: "bold" } },
-        { content: aed(x.closing), styles: { halign: "right", fontStyle: "bold", textColor: x.closing < 0 ? C.RED : C.NAVY, fillColor: C.GOLD_SOFT } },
-        { content: days[i + 1] ? `to ${dayLabel(days[i + 1].date)}` : "next day", styles: { textColor: C.MUTED, halign: "center" } },
+        {
+          content: signed(x.cash_in, "+"),
+          styles: { halign: "right", textColor: C.GREEN, fontStyle: "bold" },
+        },
+        {
+          content: signed(x.cash_out, "-"),
+          styles: { halign: "right", textColor: C.RED, fontStyle: "bold" },
+        },
+        {
+          content: aed(x.closing),
+          styles: {
+            halign: "right",
+            fontStyle: "bold",
+            textColor: x.closing < 0 ? C.RED : C.NAVY,
+            fillColor: C.GOLD_SOFT,
+          },
+        },
+        {
+          content: days[i + 1]
+            ? `to ${dayLabel(days[i + 1].date)}`
+            : "next day",
+          styles: { textColor: C.MUTED, halign: "center" },
+        },
       ]),
-      foot: [[
-        { content: `${days.length} BUSINESS DAYS`, colSpan: 2 },
-        { content: aed(s.opening_cash), styles: { halign: "right" } },
-        { content: `+ ${aed(s.total_in)}`, styles: { halign: "right" } },
-        { content: `- ${aed(s.total_out)}`, styles: { halign: "right" } },
-        { content: aed(s.running_cash), styles: { halign: "right" } },
-        "",
-      ]],
+      foot: [
+        [
+          { content: `${days.length} BUSINESS DAYS`, colSpan: 2 },
+          { content: aed(s.opening_cash), styles: { halign: "right" } },
+          { content: `+ ${aed(s.total_in)}`, styles: { halign: "right" } },
+          { content: `- ${aed(s.total_out)}`, styles: { halign: "right" } },
+          { content: aed(s.running_cash), styles: { halign: "right" } },
+          "",
+        ],
+      ],
     });
 
     r.newPage();
@@ -2911,60 +3069,189 @@ function ReportsV2() {
       const prev = days[i - 1],
         next = days[i + 1],
         list = byDay[day.date] || [];
-      body.push([{
-        content: `${longDayLabel(day.date)}     ·     DAY ${day.status === "FINALIZED" ? "CLOSED" : "OPEN"}`,
-        colSpan: N,
-        styles: { fillColor: C.NAVY, textColor: C.WHITE, fontStyle: "bold", fontSize: r.P ? 8.6 : 10, cellPadding: { top: 3.2, bottom: 3.2, left: 4, right: 4 } },
-      }]);
       body.push([
-        { content: `OPENING CASH${prev ? `   (brought forward from ${dayLabel(prev.date)})` : ""}`, colSpan: 8, styles: { fillColor: C.BLUE_SOFT, fontStyle: "bold", textColor: C.NAVY2 } },
-        { content: aed(day.opening), styles: { fillColor: C.BLUE_SOFT, fontStyle: "bold", halign: "right", textColor: C.NAVY2 } },
+        {
+          content: `${longDayLabel(day.date)}     ·     DAY ${day.status === "FINALIZED" ? "CLOSED" : "OPEN"}`,
+          colSpan: N,
+          styles: {
+            fillColor: C.NAVY,
+            textColor: C.WHITE,
+            fontStyle: "bold",
+            fontSize: r.P ? 8.6 : 10,
+            cellPadding: { top: 3.2, bottom: 3.2, left: 4, right: 4 },
+          },
+        },
+      ]);
+      body.push([
+        {
+          content: `OPENING CASH${prev ? `   (brought forward from ${dayLabel(prev.date)})` : ""}`,
+          colSpan: 8,
+          styles: {
+            fillColor: C.BLUE_SOFT,
+            fontStyle: "bold",
+            textColor: C.NAVY2,
+          },
+        },
+        {
+          content: aed(day.opening),
+          styles: {
+            fillColor: C.BLUE_SOFT,
+            fontStyle: "bold",
+            halign: "right",
+            textColor: C.NAVY2,
+          },
+        },
       ]);
       let bal = day.opening;
       for (const e of list) {
         const posted = e.status === "POSTED",
           isIn = e.type === "IN";
         if (posted) bal += isIn ? Number(e.amount) : -Number(e.amount);
-        const dim = posted ? {} : { textColor: [170, 170, 170], fontStyle: "italic" };
+        const dim = posted
+          ? {}
+          : { textColor: [170, 170, 170], fontStyle: "italic" };
         body.push([
-          { content: timeLabel(e.time), styles: { textColor: C.MUTED, ...dim } },
-          { content: posted ? e.type : `${e.type} · ${e.status}`, styles: { fontStyle: "bold", halign: "center", textColor: isIn ? C.GREEN : C.RED, ...dim } },
+          {
+            content: timeLabel(e.time),
+            styles: { textColor: C.MUTED, ...dim },
+          },
+          {
+            content: posted ? e.type : `${e.type} · ${e.status}`,
+            styles: {
+              fontStyle: "bold",
+              halign: "center",
+              textColor: isIn ? C.GREEN : C.RED,
+              ...dim,
+            },
+          },
           { content: e.category || "", styles: dim },
           { content: e.counterparty || "", styles: dim },
           { content: e.description || "", styles: dim },
-          { content: e.reference || "", styles: { textColor: C.MUTED, ...dim } },
-          { content: isIn ? aed(e.amount) : "", styles: { halign: "right", textColor: C.GREEN, fontStyle: "bold", ...dim } },
-          { content: isIn ? "" : aed(e.amount), styles: { halign: "right", textColor: C.RED, fontStyle: "bold", ...dim } },
-          { content: aed(Math.round(bal * 100) / 100), styles: { halign: "right", textColor: bal < 0 ? C.RED : C.NAVY, fillColor: C.ZEBRA, ...dim } },
+          {
+            content: e.reference || "",
+            styles: { textColor: C.MUTED, ...dim },
+          },
+          {
+            content: isIn ? aed(e.amount) : "",
+            styles: {
+              halign: "right",
+              textColor: C.GREEN,
+              fontStyle: "bold",
+              ...dim,
+            },
+          },
+          {
+            content: isIn ? "" : aed(e.amount),
+            styles: {
+              halign: "right",
+              textColor: C.RED,
+              fontStyle: "bold",
+              ...dim,
+            },
+          },
+          {
+            content: aed(Math.round(bal * 100) / 100),
+            styles: {
+              halign: "right",
+              textColor: bal < 0 ? C.RED : C.NAVY,
+              fillColor: C.ZEBRA,
+              ...dim,
+            },
+          },
         ]);
       }
       if (!list.length)
-        body.push([{ content: "No cash movements recorded on this day.", colSpan: N, styles: { textColor: C.MUTED, fontStyle: "italic", halign: "center" } }]);
+        body.push([
+          {
+            content: "No cash movements recorded on this day.",
+            colSpan: N,
+            styles: {
+              textColor: C.MUTED,
+              fontStyle: "italic",
+              halign: "center",
+            },
+          },
+        ]);
       body.push([
-        { content: "DAY TOTAL", colSpan: 6, styles: { fontStyle: "bold", halign: "right", textColor: C.NAVY } },
-        { content: `+ ${aed(day.cash_in)}`, styles: { halign: "right", fontStyle: "bold", textColor: C.GREEN } },
-        { content: `- ${aed(day.cash_out)}`, styles: { halign: "right", fontStyle: "bold", textColor: C.RED } },
+        {
+          content: "DAY TOTAL",
+          colSpan: 6,
+          styles: { fontStyle: "bold", halign: "right", textColor: C.NAVY },
+        },
+        {
+          content: `+ ${aed(day.cash_in)}`,
+          styles: { halign: "right", fontStyle: "bold", textColor: C.GREEN },
+        },
+        {
+          content: `- ${aed(day.cash_out)}`,
+          styles: { halign: "right", fontStyle: "bold", textColor: C.RED },
+        },
         "",
       ]);
       if (day.counted != null && Math.abs(day.variance) >= 0.01)
-        body.push([{
-          content: `EXPECTED ${aed(day.expected)}   ·   COUNTED ${aed(day.counted)}   ·   VARIANCE ${day.variance > 0 ? "+" : ""}${aed(day.variance)}`,
-          colSpan: N,
-          styles: { halign: "right", fontStyle: "bold", textColor: day.variance < 0 ? C.RED : C.GREEN },
-        }]);
+        body.push([
+          {
+            content: `EXPECTED ${aed(day.expected)}   ·   COUNTED ${aed(day.counted)}   ·   VARIANCE ${day.variance > 0 ? "+" : ""}${aed(day.variance)}`,
+            colSpan: N,
+            styles: {
+              halign: "right",
+              fontStyle: "bold",
+              textColor: day.variance < 0 ? C.RED : C.GREEN,
+            },
+          },
+        ]);
       body.push([
-        { content: `CLOSING CASH   ·   carried forward to ${next ? dayLabel(next.date) : "the next business day"}`, colSpan: 8, styles: { fillColor: C.GOLD_SOFT, fontStyle: "bold", fontSize: r.P ? 8 : 9.4, textColor: C.GOLD_DARK } },
-        { content: money(day.closing), styles: { fillColor: C.GOLD_SOFT, fontStyle: "bold", fontSize: r.P ? 8 : 9.4, halign: "right", textColor: day.closing < 0 ? C.RED : C.GOLD_DARK } },
+        {
+          content: `CLOSING CASH   ·   carried forward to ${next ? dayLabel(next.date) : "the next business day"}`,
+          colSpan: 8,
+          styles: {
+            fillColor: C.GOLD_SOFT,
+            fontStyle: "bold",
+            fontSize: r.P ? 8 : 9.4,
+            textColor: C.GOLD_DARK,
+          },
+        },
+        {
+          content: money(day.closing),
+          styles: {
+            fillColor: C.GOLD_SOFT,
+            fontStyle: "bold",
+            fontSize: r.P ? 8 : 9.4,
+            halign: "right",
+            textColor: day.closing < 0 ? C.RED : C.GOLD_DARK,
+          },
+        },
       ]);
-      if (next) body.push([{ content: "", colSpan: N, styles: { minCellHeight: 5, lineWidth: 0, fillColor: false } }]);
+      if (next)
+        body.push([
+          {
+            content: "",
+            colSpan: N,
+            styles: { minCellHeight: 5, lineWidth: 0, fillColor: false },
+          },
+        ]);
     });
     const widths = [17, 12, 23, 21, null, 18, 20, 20, 24];
     r.table({
       startY: 42,
-      head: [["TIME", "TYPE", "CATEGORY", "PARTY", "DESCRIPTION", "REF.", "CASH IN", "CASH OUT", "BALANCE"]],
+      head: [
+        [
+          "TIME",
+          "TYPE",
+          "CATEGORY",
+          "PARTY",
+          "DESCRIPTION",
+          "REF.",
+          "CASH IN",
+          "CASH OUT",
+          "BALANCE",
+        ],
+      ],
       body,
       alternateRowStyles: {},
-      columnStyles: Object.fromEntries(widths.map((w, i) => [i, w ? { cellWidth: w } : {}])),
+      columnStyles: Object.fromEntries(
+        widths.map((w, i) => [i, w ? { cellWidth: w } : {}]),
+      ),
     });
     r.signatures();
     r.save(`Northfield_daily_cash_${from}_${to}.pdf`);
@@ -2972,57 +3259,166 @@ function ReportsV2() {
 
   // ---------- Daily Closing ----------
   async function closingPdf(brand) {
-    const r = createLuxuryReport({ brand, title: "DAILY CLOSING REPORT", subtitle: "OPENING  ·  EXPECTED  ·  COUNTED", from, to });
+    const r = createLuxuryReport({
+      brand,
+      title: "DAILY CLOSING REPORT",
+      subtitle: "OPENING  ·  EXPECTED  ·  COUNTED",
+      from,
+      to,
+    });
     const { C } = r;
     const days = d.entries || [],
       s = d.summary || {};
     let y = r.cards([
-      { label: "OPENING CASH", value: money(s.opening_cash), color: C.NAVY2, note: `Start of ${dayLabel(days[0]?.date || from)}` },
-      { label: "TOTAL CASH IN", value: money(s.total_in), color: C.GREEN, note: "All posted receipts" },
-      { label: "TOTAL CASH OUT", value: money(s.total_out), color: C.RED, note: "All posted payments" },
-      { label: "FINAL CASH", value: money(s.final_cash), color: C.GOLD, note: "Carried forward" },
+      {
+        label: "OPENING CASH",
+        value: money(s.opening_cash),
+        color: C.NAVY2,
+        note: `Start of ${dayLabel(days[0]?.date || from)}`,
+      },
+      {
+        label: "TOTAL CASH IN",
+        value: money(s.total_in),
+        color: C.GREEN,
+        note: "All posted receipts",
+      },
+      {
+        label: "TOTAL CASH OUT",
+        value: money(s.total_out),
+        color: C.RED,
+        note: "All posted payments",
+      },
+      {
+        label: "FINAL CASH",
+        value: money(s.final_cash),
+        color: C.GOLD,
+        note: "Carried forward",
+      },
     ]);
     const tv = Number(s.total_variance || 0);
     y = r.cards(
       [
-        { label: "BUSINESS DAYS", value: String(s.day_count || 0), color: C.NAVY2, note: "Days with activity" },
-        { label: "DAYS CLOSED", value: `${s.finalized_count || 0} / ${s.day_count || 0}`, color: C.GREEN, note: "Counted and finalized" },
-        { label: "TOTAL VARIANCE", value: money(tv), color: tv < 0 ? C.RED : C.GREEN, note: "Counted minus expected" },
+        {
+          label: "BUSINESS DAYS",
+          value: String(s.day_count || 0),
+          color: C.NAVY2,
+          note: "Days with activity",
+        },
+        {
+          label: "DAYS CLOSED",
+          value: `${s.finalized_count || 0} / ${s.day_count || 0}`,
+          color: C.GREEN,
+          note: "Counted and finalized",
+        },
+        {
+          label: "TOTAL VARIANCE",
+          value: money(tv),
+          color: tv < 0 ? C.RED : C.GREEN,
+          note: "Counted minus expected",
+        },
       ],
       y + 4,
     );
-    y = r.heading("DAY-BY-DAY CLOSING", "Each day opens with the previous day's closing cash.", y + 10);
+    y = r.heading(
+      "DAY-BY-DAY CLOSING",
+      "Each day opens with the previous day's closing cash.",
+      y + 10,
+    );
     const body = [];
     days.forEach((x, i) => {
       const fin = x.status === "FINALIZED";
       body.push([
-        { content: dayLabel(x.date), styles: { fontStyle: "bold", textColor: C.NAVY } },
+        {
+          content: dayLabel(x.date),
+          styles: { fontStyle: "bold", textColor: C.NAVY },
+        },
         dayStatusCell(x.status, C),
         { content: aed(x.opening), styles: { halign: "right" } },
-        { content: signed(x.cash_in, "+"), styles: { halign: "right", textColor: C.GREEN, fontStyle: "bold" } },
-        { content: signed(x.cash_out, "-"), styles: { halign: "right", textColor: C.RED, fontStyle: "bold" } },
+        {
+          content: signed(x.cash_in, "+"),
+          styles: { halign: "right", textColor: C.GREEN, fontStyle: "bold" },
+        },
+        {
+          content: signed(x.cash_out, "-"),
+          styles: { halign: "right", textColor: C.RED, fontStyle: "bold" },
+        },
         { content: aed(x.expected), styles: { halign: "right" } },
-        { content: fin ? aed(x.counted) : "—", styles: { halign: "right", fontStyle: "bold", textColor: fin ? C.NAVY : C.MUTED } },
-        { content: fin ? `${x.variance > 0 ? "+" : ""}${aed(x.variance)}` : "—", styles: { halign: "right", fontStyle: "bold", textColor: !fin ? C.MUTED : x.variance < 0 ? C.RED : x.variance > 0 ? C.GREEN : C.NAVY } },
-        { content: aed(x.closing), styles: { halign: "right", fontStyle: "bold", textColor: x.closing < 0 ? C.RED : C.NAVY, fillColor: C.GOLD_SOFT } },
+        {
+          content: fin ? aed(x.counted) : "—",
+          styles: {
+            halign: "right",
+            fontStyle: "bold",
+            textColor: fin ? C.NAVY : C.MUTED,
+          },
+        },
+        {
+          content: fin ? `${x.variance > 0 ? "+" : ""}${aed(x.variance)}` : "—",
+          styles: {
+            halign: "right",
+            fontStyle: "bold",
+            textColor: !fin
+              ? C.MUTED
+              : x.variance < 0
+                ? C.RED
+                : x.variance > 0
+                  ? C.GREEN
+                  : C.NAVY,
+          },
+        },
+        {
+          content: aed(x.closing),
+          styles: {
+            halign: "right",
+            fontStyle: "bold",
+            textColor: x.closing < 0 ? C.RED : C.NAVY,
+            fillColor: C.GOLD_SOFT,
+          },
+        },
       ]);
       if (x.note)
-        body.push([{ content: `Manager note: ${x.note}`, colSpan: 9, styles: { fontStyle: "italic", textColor: C.MUTED, fillColor: C.ZEBRA } }]);
+        body.push([
+          {
+            content: `Manager note: ${x.note}`,
+            colSpan: 9,
+            styles: {
+              fontStyle: "italic",
+              textColor: C.MUTED,
+              fillColor: C.ZEBRA,
+            },
+          },
+        ]);
     });
     r.table({
       startY: y,
-      head: [["DATE", "STATUS", "OPENING", "CASH IN", "CASH OUT", "EXPECTED", "COUNTED", "VARIANCE", "CLOSING"]],
+      head: [
+        [
+          "DATE",
+          "STATUS",
+          "OPENING",
+          "CASH IN",
+          "CASH OUT",
+          "EXPECTED",
+          "COUNTED",
+          "VARIANCE",
+          "CLOSING",
+        ],
+      ],
       body,
-      foot: [[
-        { content: `${days.length} DAYS`, colSpan: 2 },
-        { content: aed(s.opening_cash), styles: { halign: "right" } },
-        { content: `+ ${aed(s.total_in)}`, styles: { halign: "right" } },
-        { content: `- ${aed(s.total_out)}`, styles: { halign: "right" } },
-        "",
-        "",
-        { content: `${tv > 0 ? "+" : ""}${aed(tv)}`, styles: { halign: "right" } },
-        { content: aed(s.final_cash), styles: { halign: "right" } },
-      ]],
+      foot: [
+        [
+          { content: `${days.length} DAYS`, colSpan: 2 },
+          { content: aed(s.opening_cash), styles: { halign: "right" } },
+          { content: `+ ${aed(s.total_in)}`, styles: { halign: "right" } },
+          { content: `- ${aed(s.total_out)}`, styles: { halign: "right" } },
+          "",
+          "",
+          {
+            content: `${tv > 0 ? "+" : ""}${aed(tv)}`,
+            styles: { halign: "right" },
+          },
+          { content: aed(s.final_cash), styles: { halign: "right" } },
+        ],
+      ],
       columnStyles: { 0: { cellWidth: 21 }, 1: { cellWidth: 17 } },
     });
     r.signatures(["CASHIER", "MANAGER", "APPROVED BY"]);
@@ -3032,55 +3428,172 @@ function ReportsV2() {
   // ---------- Emirates Islamic (bank) ----------
   async function bankPdf(brand) {
     const account = d.entries[0]?.account || "Emirates Islamic";
-    const r = createLuxuryReport({ brand, title: "BANK STATEMENT REPORT", subtitle: account.toUpperCase(), from, to });
+    const r = createLuxuryReport({
+      brand,
+      title: "BANK STATEMENT REPORT",
+      subtitle: account.toUpperCase(),
+      from,
+      to,
+    });
     const { C } = r;
     const s = d.summary || {},
       opening = Number(s.opening_balance || 0);
     let y = r.cards([
-      { label: "OPENING BALANCE", value: money(opening), color: C.NAVY2, note: `Start of ${dayLabel(from)}` },
-      { label: "MONEY IN", value: money(s.total_in), color: C.GREEN, note: "Deposits and receipts" },
-      { label: "MONEY OUT", value: money(s.total_out), color: C.RED, note: "Payments and withdrawals" },
-      { label: "CLOSING BALANCE", value: money(s.closing_balance ?? opening + Number(s.balance || 0)), color: C.GOLD, note: `End of ${dayLabel(to)}` },
+      {
+        label: "OPENING BALANCE",
+        value: money(opening),
+        color: C.NAVY2,
+        note: `Start of ${dayLabel(from)}`,
+      },
+      {
+        label: "MONEY IN",
+        value: money(s.total_in),
+        color: C.GREEN,
+        note: "Deposits and receipts",
+      },
+      {
+        label: "MONEY OUT",
+        value: money(s.total_out),
+        color: C.RED,
+        note: "Payments and withdrawals",
+      },
+      {
+        label: "CLOSING BALANCE",
+        value: money(s.closing_balance ?? opening + Number(s.balance || 0)),
+        color: C.GOLD,
+        note: `End of ${dayLabel(to)}`,
+      },
     ]);
-    y = r.heading("ACCOUNT ACTIVITY", "Running balance after every posted entry.", y + 10);
+    y = r.heading(
+      "ACCOUNT ACTIVITY",
+      "Running balance after every posted entry.",
+      y + 10,
+    );
     let bal = opening,
       lastDay = "";
-    const body = [[
-      { content: "OPENING BALANCE", colSpan: 8, styles: { fillColor: C.BLUE_SOFT, fontStyle: "bold", textColor: C.NAVY2 } },
-      { content: aed(opening), styles: { fillColor: C.BLUE_SOFT, fontStyle: "bold", halign: "right", textColor: C.NAVY2 } },
-    ]];
+    const body = [
+      [
+        {
+          content: "OPENING BALANCE",
+          colSpan: 8,
+          styles: {
+            fillColor: C.BLUE_SOFT,
+            fontStyle: "bold",
+            textColor: C.NAVY2,
+          },
+        },
+        {
+          content: aed(opening),
+          styles: {
+            fillColor: C.BLUE_SOFT,
+            fontStyle: "bold",
+            halign: "right",
+            textColor: C.NAVY2,
+          },
+        },
+      ],
+    ];
     for (const e of d.entries) {
       const posted = e.status === "POSTED",
         isIn = e.type === "IN",
         k = String(e.date).slice(0, 10);
       if (posted) bal += isIn ? Number(e.amount) : -Number(e.amount);
-      const dim = posted ? {} : { textColor: [170, 170, 170], fontStyle: "italic" };
+      const dim = posted
+        ? {}
+        : { textColor: [170, 170, 170], fontStyle: "italic" };
       body.push([
-        { content: k === lastDay ? "" : dayLabel(k), styles: { fontStyle: "bold", textColor: C.NAVY, ...dim } },
-        { content: posted ? e.type : `${e.type} · ${e.status}`, styles: { fontStyle: "bold", halign: "center", textColor: isIn ? C.GREEN : C.RED, ...dim } },
+        {
+          content: k === lastDay ? "" : dayLabel(k),
+          styles: { fontStyle: "bold", textColor: C.NAVY, ...dim },
+        },
+        {
+          content: posted ? e.type : `${e.type} · ${e.status}`,
+          styles: {
+            fontStyle: "bold",
+            halign: "center",
+            textColor: isIn ? C.GREEN : C.RED,
+            ...dim,
+          },
+        },
         { content: e.category || "", styles: dim },
         { content: e.counterparty || "", styles: dim },
         { content: e.description || "", styles: dim },
         { content: e.reference || "", styles: { textColor: C.MUTED, ...dim } },
-        { content: isIn ? aed(e.amount) : "", styles: { halign: "right", textColor: C.GREEN, fontStyle: "bold", ...dim } },
-        { content: isIn ? "" : aed(e.amount), styles: { halign: "right", textColor: C.RED, fontStyle: "bold", ...dim } },
-        { content: aed(Math.round(bal * 100) / 100), styles: { halign: "right", textColor: bal < 0 ? C.RED : C.NAVY, fillColor: C.GOLD_SOFT, ...dim } },
+        {
+          content: isIn ? aed(e.amount) : "",
+          styles: {
+            halign: "right",
+            textColor: C.GREEN,
+            fontStyle: "bold",
+            ...dim,
+          },
+        },
+        {
+          content: isIn ? "" : aed(e.amount),
+          styles: {
+            halign: "right",
+            textColor: C.RED,
+            fontStyle: "bold",
+            ...dim,
+          },
+        },
+        {
+          content: aed(Math.round(bal * 100) / 100),
+          styles: {
+            halign: "right",
+            textColor: bal < 0 ? C.RED : C.NAVY,
+            fillColor: C.GOLD_SOFT,
+            ...dim,
+          },
+        },
       ]);
       lastDay = k;
     }
     if (!d.entries.length)
-      body.push([{ content: "No bank activity in this period.", colSpan: 9, styles: { textColor: C.MUTED, fontStyle: "italic", halign: "center" } }]);
+      body.push([
+        {
+          content: "No bank activity in this period.",
+          colSpan: 9,
+          styles: { textColor: C.MUTED, fontStyle: "italic", halign: "center" },
+        },
+      ]);
     r.table({
       startY: y,
-      head: [["DATE", "TYPE", "CATEGORY", "PARTY", "DESCRIPTION", "REF.", "IN", "OUT", "BALANCE"]],
+      head: [
+        [
+          "DATE",
+          "TYPE",
+          "CATEGORY",
+          "PARTY",
+          "DESCRIPTION",
+          "REF.",
+          "IN",
+          "OUT",
+          "BALANCE",
+        ],
+      ],
       body,
-      foot: [[
-        { content: `${d.entries.length} ENTRIES`, colSpan: 6 },
-        { content: aed(s.total_in), styles: { halign: "right" } },
-        { content: aed(s.total_out), styles: { halign: "right" } },
-        { content: aed(Math.round(bal * 100) / 100), styles: { halign: "right" } },
-      ]],
-      columnStyles: { 0: { cellWidth: 19 }, 1: { cellWidth: 12 }, 2: { cellWidth: 24 }, 3: { cellWidth: 22 }, 5: { cellWidth: 18 }, 6: { cellWidth: 19 }, 7: { cellWidth: 19 }, 8: { cellWidth: 22 } },
+      foot: [
+        [
+          { content: `${d.entries.length} ENTRIES`, colSpan: 6 },
+          { content: aed(s.total_in), styles: { halign: "right" } },
+          { content: aed(s.total_out), styles: { halign: "right" } },
+          {
+            content: aed(Math.round(bal * 100) / 100),
+            styles: { halign: "right" },
+          },
+        ],
+      ],
+      columnStyles: {
+        0: { cellWidth: 19 },
+        1: { cellWidth: 12 },
+        2: { cellWidth: 24 },
+        3: { cellWidth: 22 },
+        5: { cellWidth: 18 },
+        6: { cellWidth: 19 },
+        7: { cellWidth: 19 },
+        8: { cellWidth: 22 },
+      },
     });
     r.signatures();
     r.save(`Northfield_bank_${from}_${to}.pdf`);
@@ -3088,20 +3601,57 @@ function ReportsV2() {
 
   // ---------- Iran / Dubai transfers ----------
   async function transferPdf(brand) {
-    const r = createLuxuryReport({ brand, title: "IRAN / DUBAI TRANSFERS", subtitle: "AED  ·  IRR  ·  EXCHANGE RATE", from, to, orientation: "landscape" });
+    const r = createLuxuryReport({
+      brand,
+      title: "IRAN / DUBAI TRANSFERS",
+      subtitle: "AED  ·  IRR  ·  EXCHANGE RATE",
+      from,
+      to,
+      orientation: "landscape",
+    });
     const { C } = r;
     const s = d.summary || {},
       posted = d.entries.filter((x) => x.status === "POSTED"),
-      dirSum = (dir) => posted.filter((x) => x.type === dir).reduce((t, x) => t + Number(x.amount_aed || 0), 0),
-      irr = (n) => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 }),
-      rate = Number(s.total_aed) ? Number(s.total_irr) / Number(s.total_aed) : 0;
+      dirSum = (dir) =>
+        posted
+          .filter((x) => x.type === dir)
+          .reduce((t, x) => t + Number(x.amount_aed || 0), 0),
+      irr = (n) =>
+        Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 }),
+      rate = Number(s.total_aed)
+        ? Number(s.total_irr) / Number(s.total_aed)
+        : 0;
     let y = r.cards([
-      { label: "TOTAL AED", value: money(s.total_aed), color: C.NAVY2, note: "All posted transfers" },
-      { label: "IRAN TO DUBAI", value: money(dirSum("IRAN_TO_DUBAI")), color: C.GREEN, note: "Received in Dubai" },
-      { label: "DUBAI TO IRAN", value: money(dirSum("DUBAI_TO_IRAN")), color: C.RED, note: "Sent to Iran" },
-      { label: "TOTAL IRR", value: `IRR ${irr(s.total_irr)}`, color: C.GOLD, note: `${s.record_count || 0} records · avg rate ${irr(rate)}` },
+      {
+        label: "TOTAL AED",
+        value: money(s.total_aed),
+        color: C.NAVY2,
+        note: "All posted transfers",
+      },
+      {
+        label: "IRAN TO DUBAI",
+        value: money(dirSum("IRAN_TO_DUBAI")),
+        color: C.GREEN,
+        note: "Received in Dubai",
+      },
+      {
+        label: "DUBAI TO IRAN",
+        value: money(dirSum("DUBAI_TO_IRAN")),
+        color: C.RED,
+        note: "Sent to Iran",
+      },
+      {
+        label: "TOTAL IRR",
+        value: `IRR ${irr(s.total_irr)}`,
+        color: C.GOLD,
+        note: `${s.record_count || 0} records · avg rate ${irr(rate)}`,
+      },
     ]);
-    y = r.heading("TRANSFER REGISTER", "Every transfer with its exchange rate and parties.", y + 10);
+    y = r.heading(
+      "TRANSFER REGISTER",
+      "Every transfer with its exchange rate and parties.",
+      y + 10,
+    );
     let lastDay = "";
     const body = d.entries.map((e) => {
       const k = String(e.date).slice(0, 10),
@@ -3109,35 +3659,97 @@ function ReportsV2() {
         dim = ok ? {} : { textColor: [170, 170, 170], fontStyle: "italic" },
         toDubai = e.type === "IRAN_TO_DUBAI";
       const row = [
-        { content: k === lastDay ? "" : dayLabel(k), styles: { fontStyle: "bold", textColor: C.NAVY, ...dim } },
-        { content: toDubai ? "IRAN TO DUBAI" : e.type === "DUBAI_TO_IRAN" ? "DUBAI TO IRAN" : String(e.type || "").replaceAll("_", " "), styles: { fontStyle: "bold", textColor: toDubai ? C.GREEN : C.RED, ...dim } },
-        { content: aed(e.amount_aed), styles: { halign: "right", fontStyle: "bold", textColor: C.NAVY, fillColor: C.GOLD_SOFT, ...dim } },
+        {
+          content: k === lastDay ? "" : dayLabel(k),
+          styles: { fontStyle: "bold", textColor: C.NAVY, ...dim },
+        },
+        {
+          content: toDubai
+            ? "IRAN TO DUBAI"
+            : e.type === "DUBAI_TO_IRAN"
+              ? "DUBAI TO IRAN"
+              : String(e.type || "").replaceAll("_", " "),
+          styles: {
+            fontStyle: "bold",
+            textColor: toDubai ? C.GREEN : C.RED,
+            ...dim,
+          },
+        },
+        {
+          content: aed(e.amount_aed),
+          styles: {
+            halign: "right",
+            fontStyle: "bold",
+            textColor: C.NAVY,
+            fillColor: C.GOLD_SOFT,
+            ...dim,
+          },
+        },
         { content: irr(e.amount_irr), styles: { halign: "right", ...dim } },
-        { content: irr(e.exchange_rate), styles: { halign: "right", textColor: C.MUTED, ...dim } },
+        {
+          content: irr(e.exchange_rate),
+          styles: { halign: "right", textColor: C.MUTED, ...dim },
+        },
         { content: e.sender || "", styles: dim },
         { content: e.receiver || "", styles: dim },
         { content: e.channel || "", styles: dim },
         { content: e.reference || "", styles: { textColor: C.MUTED, ...dim } },
         { content: e.description || "", styles: dim },
-        { content: e.status || "", styles: { halign: "center", fontStyle: "bold", textColor: ok ? C.GREEN : C.MUTED } },
+        {
+          content: e.status || "",
+          styles: {
+            halign: "center",
+            fontStyle: "bold",
+            textColor: ok ? C.GREEN : C.MUTED,
+          },
+        },
       ];
       lastDay = k;
       return row;
     });
     if (!body.length)
-      body.push([{ content: "No transfers in this period.", colSpan: 11, styles: { textColor: C.MUTED, fontStyle: "italic", halign: "center" } }]);
+      body.push([
+        {
+          content: "No transfers in this period.",
+          colSpan: 11,
+          styles: { textColor: C.MUTED, fontStyle: "italic", halign: "center" },
+        },
+      ]);
     r.table({
       startY: y,
-      head: [["DATE", "DIRECTION", "AED", "IRR", "RATE", "SENDER", "RECEIVER", "CHANNEL", "REF.", "DESCRIPTION", "STATUS"]],
+      head: [
+        [
+          "DATE",
+          "DIRECTION",
+          "AED",
+          "IRR",
+          "RATE",
+          "SENDER",
+          "RECEIVER",
+          "CHANNEL",
+          "REF.",
+          "DESCRIPTION",
+          "STATUS",
+        ],
+      ],
       body,
-      foot: [[
-        { content: `${d.entries.length} TRANSFERS`, colSpan: 2 },
-        { content: aed(s.total_aed), styles: { halign: "right" } },
-        { content: irr(s.total_irr), styles: { halign: "right" } },
-        { content: irr(rate), styles: { halign: "right" } },
-        { content: "", colSpan: 6 },
-      ]],
-      columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 26 }, 2: { cellWidth: 24 }, 3: { cellWidth: 30 }, 4: { cellWidth: 18 }, 10: { cellWidth: 18 } },
+      foot: [
+        [
+          { content: `${d.entries.length} TRANSFERS`, colSpan: 2 },
+          { content: aed(s.total_aed), styles: { halign: "right" } },
+          { content: irr(s.total_irr), styles: { halign: "right" } },
+          { content: irr(rate), styles: { halign: "right" } },
+          { content: "", colSpan: 6 },
+        ],
+      ],
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 24 },
+        3: { cellWidth: 30 },
+        4: { cellWidth: 18 },
+        10: { cellWidth: 18 },
+      },
     });
     r.signatures();
     r.save(`Northfield_iran_dubai_${from}_${to}.pdf`);
@@ -4186,37 +4798,104 @@ function AttendanceAdmin() {
         : d.staff.find((x) => String(x.id) === String(filters.userId))
             ?.display_name || "Selected employee";
     let y = r.cards([
-      { label: "TOTAL WORKED", value: hm(totalMinutes), color: C.NAVY2, note: `${completed.length} completed shifts` },
-      { label: "LATE TIME", value: `${lateMinutes} min`, color: C.RED, note: "Arrivals after grace time" },
-      { label: "OVERTIME", value: `${overtimeMinutes} min`, color: C.GREEN, note: "Beyond scheduled hours" },
-      { label: "OPEN SHIFTS", value: String(rows.length - completed.length), color: C.GOLD, note: "Clocked in, not out" },
+      {
+        label: "TOTAL WORKED",
+        value: hm(totalMinutes),
+        color: C.NAVY2,
+        note: `${completed.length} completed shifts`,
+      },
+      {
+        label: "LATE TIME",
+        value: `${lateMinutes} min`,
+        color: C.RED,
+        note: "Arrivals after grace time",
+      },
+      {
+        label: "OVERTIME",
+        value: `${overtimeMinutes} min`,
+        color: C.GREEN,
+        note: "Beyond scheduled hours",
+      },
+      {
+        label: "OPEN SHIFTS",
+        value: String(rows.length - completed.length),
+        color: C.GOLD,
+        note: "Clocked in, not out",
+      },
     ]);
-    y = r.heading("ATTENDANCE REGISTER", `Scope: ${scopeName}  ·  Dubai local time`, y + 10);
+    y = r.heading(
+      "ATTENDANCE REGISTER",
+      `Scope: ${scopeName}  ·  Dubai local time`,
+      y + 10,
+    );
     let lastDay = "";
     r.table({
       startY: y,
-      head: [["DATE", "EMPLOYEE", "CLOCK IN", "CLOCK OUT", "WORKED", "LATE", "OVERTIME"]],
+      head: [
+        [
+          "DATE",
+          "EMPLOYEE",
+          "CLOCK IN",
+          "CLOCK OUT",
+          "WORKED",
+          "LATE",
+          "OVERTIME",
+        ],
+      ],
       body: rows.map((x) => {
         const k = String(x.work_date).slice(0, 10),
           open = x.worked_minutes == null,
           row = [
-            { content: k === lastDay ? "" : dayLabel(k), styles: { fontStyle: "bold", textColor: C.NAVY } },
+            {
+              content: k === lastDay ? "" : dayLabel(k),
+              styles: { fontStyle: "bold", textColor: C.NAVY },
+            },
             { content: x.display_name || "", styles: { fontStyle: "bold" } },
-            { content: attendanceTime(x.clock_in), styles: { halign: "center" } },
-            { content: attendanceTime(x.clock_out), styles: { halign: "center" } },
-            { content: open ? "OPEN" : hm(Number(x.worked_minutes)), styles: { halign: "right", fontStyle: "bold", textColor: open ? C.GOLD : C.NAVY, fillColor: C.GOLD_SOFT } },
-            { content: Number(x.late_minutes) ? `${x.late_minutes} min` : "—", styles: { halign: "right", textColor: Number(x.late_minutes) ? C.RED : C.MUTED } },
-            { content: Number(x.overtime_minutes) ? `${x.overtime_minutes} min` : "—", styles: { halign: "right", textColor: Number(x.overtime_minutes) ? C.GREEN : C.MUTED } },
+            {
+              content: attendanceTime(x.clock_in),
+              styles: { halign: "center" },
+            },
+            {
+              content: attendanceTime(x.clock_out),
+              styles: { halign: "center" },
+            },
+            {
+              content: open ? "OPEN" : hm(Number(x.worked_minutes)),
+              styles: {
+                halign: "right",
+                fontStyle: "bold",
+                textColor: open ? C.GOLD : C.NAVY,
+                fillColor: C.GOLD_SOFT,
+              },
+            },
+            {
+              content: Number(x.late_minutes) ? `${x.late_minutes} min` : "—",
+              styles: {
+                halign: "right",
+                textColor: Number(x.late_minutes) ? C.RED : C.MUTED,
+              },
+            },
+            {
+              content: Number(x.overtime_minutes)
+                ? `${x.overtime_minutes} min`
+                : "—",
+              styles: {
+                halign: "right",
+                textColor: Number(x.overtime_minutes) ? C.GREEN : C.MUTED,
+              },
+            },
           ];
         lastDay = k;
         return row;
       }),
-      foot: [[
-        { content: `${rows.length} RECORDS`, colSpan: 4 },
-        { content: hm(totalMinutes), styles: { halign: "right" } },
-        { content: `${lateMinutes} min`, styles: { halign: "right" } },
-        { content: `${overtimeMinutes} min`, styles: { halign: "right" } },
-      ]],
+      foot: [
+        [
+          { content: `${rows.length} RECORDS`, colSpan: 4 },
+          { content: hm(totalMinutes), styles: { halign: "right" } },
+          { content: `${lateMinutes} min`, styles: { halign: "right" } },
+          { content: `${overtimeMinutes} min`, styles: { halign: "right" } },
+        ],
+      ],
     });
     r.signatures(["PREPARED BY", "MANAGER APPROVAL"]);
     r.save(`Northfield-Attendance-${filters.from}-${filters.to}.pdf`);
@@ -5261,6 +5940,8 @@ function StaffWorkspace({ user }) {
 const CONTROL_PERMISSIONS = [
   ["dashboard", "Dashboard"],
   ["transactions", "New Transaction"],
+  ["sales", "Sales"],
+  ["purchases", "Purchases & Expenses"],
   ["movements", "Money Movements"],
   ["closing", "Daily Closing"],
   ["bank", "Emirates Islamic"],
@@ -5797,6 +6478,10 @@ function ControlLuxury() {
 }
 const ITEMS = [
   ["Dashboard", LayoutDashboard, "dashboard"],
+  ["Sales", FileText, "sales"],
+  ["Purchases & Expenses", PlusCircle, "purchases"],
+  ["Customer Accounts", Users, "sales"],
+  ["Supplier Accounts", Users, "purchases"],
   ["New Transaction", PlusCircle, "transactions"],
   ["Money Movements", ArrowLeftRight, "movements"],
   ["Daily Closing", CheckCircle2, "closing"],
@@ -5849,11 +6534,20 @@ function MobileBottomNav({ page, setPage, setOpen, items }) {
   );
 }
 export default function NorthfieldApp({ user }) {
+  const [invoiceRequest, setInvoiceRequest] = useState(null);
   const [page, setPage] = useState(""),
     [access, setAccess] = useState(null),
     [open, setOpen] = useState(false),
     [theme, setTheme] = useState("light"),
     [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    const handler = (e) => {
+      setInvoiceRequest({ ...e.detail, nonce: Date.now() });
+      setPage(e.detail.kind === "SALE" ? "Sales" : "Purchases & Expenses");
+    };
+    window.addEventListener("northfield:open-invoice", handler);
+    return () => window.removeEventListener("northfield:open-invoice", handler);
+  }, []);
   useEffect(() => {
     const saved = localStorage.getItem("northfield-theme");
     if (saved === "dark" || saved === "light") setTheme(saved);
@@ -5908,6 +6602,24 @@ export default function NorthfieldApp({ user }) {
   let body =
     page === "Dashboard" ? (
       <Dashboard user={user} />
+    ) : page === "Sales" ? (
+      <CommerceCenter
+        key="sales"
+        kind="SALE"
+        user={user}
+        invoiceRequest={invoiceRequest?.kind === "SALE" ? invoiceRequest : null}
+      />
+    ) : page === "Purchases & Expenses" ? (
+      <CommerceCenter
+        key="purchases"
+        kind="BUYING"
+        user={user}
+        invoiceRequest={invoiceRequest?.kind !== "SALE" ? invoiceRequest : null}
+      />
+    ) : page === "Customer Accounts" ? (
+      <AccountCenter key="customers" kind="SALE" user={user} />
+    ) : page === "Supplier Accounts" ? (
+      <AccountCenter key="suppliers" kind="BUYING" user={user} />
     ) : page === "Staff" ? (
       <StaffWorkspace user={user} />
     ) : page === "New Transaction" ? (
@@ -5968,6 +6680,7 @@ export default function NorthfieldApp({ user }) {
           {allowed.map(([name, Icon]) => (
             <button
               key={name}
+              aria-label={name}
               title={collapsed ? name : undefined}
               className={page === name ? "active" : ""}
               onClick={() => {

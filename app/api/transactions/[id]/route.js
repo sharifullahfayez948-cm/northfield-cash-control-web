@@ -5,7 +5,7 @@ import { ok,fail } from "@/lib/api";
 
 function admin(user){if(user.role!=="Super Admin")throw new Error("Super Admin permission required.")}
 function dateOnly(value){if(value instanceof Date&&!Number.isNaN(value.getTime()))return value.toISOString().slice(0,10);const raw=String(value||"");const iso=raw.match(/^\d{4}-\d{2}-\d{2}/)?.[0];if(iso)return iso;const parsed=new Date(value);if(Number.isNaN(parsed.getTime()))throw new Error("Invalid transaction date.");return parsed.toISOString().slice(0,10)}
-async function entry(id){const r=await query("select * from cash_entries where id=$1 limit 1",[id]);if(!r.rows[0])throw new Error("Transaction not found.");return r.rows[0]}
+async function entry(id){const r=await query("select * from cash_entries where id=$1 limit 1",[id]);if(!r.rows[0])throw new Error("Transaction not found.");if(String(r.rows[0].transfer_group||'').startsWith('SP-'))throw new Error('Manage this linked cash entry from Sales or Purchases & Expenses.');return r.rows[0]}
 async function openDay(date){const r=await query("select status from cash_days where business_date=$1 limit 1",[date]);if(r.rows[0]?.status==="FINALIZED")throw new Error("Reopen this business day before changing its transactions.")}
 
 export async function PATCH(req,{params}){try{
