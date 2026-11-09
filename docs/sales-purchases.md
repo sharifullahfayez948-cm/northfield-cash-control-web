@@ -27,3 +27,15 @@ Register pages show 50 entries; exports and individual account histories are lim
 `npm test` runs isolated PGlite integration tests covering split cash/non-cash posting, retry protection, oldest-invoice settlement, overpayment, invoice revisions, payment corrections, supplier invoice uniqueness, voids, closed days, rollback on audit failure, catalog identity and access revocations. The tests contain synthetic data only.
 
 `npm run build` builds the application. For isolated local builds, `NORTHFIELD_BUILD_DIR` selects a separate output folder. `NORTHFIELD_LOCAL_BUILD=1` disables the webpack worker and keeps that local build directory to avoid Windows directory-creation races; production uses standard Next.js defaults.
+
+## Reception and reporting refinements
+
+Customer and supplier creation now opens the profile editor in one click, including from an invoice. Save & select keeps the new account attached to the entry. Directory search supports name, formatted phone number and account code, with keyboard selection and inline identity. Duplicate names are blocked with a directory-specific error; a matching phone gives a warning when the directory is loaded, because family/shared numbers can be legitimate. Profile edits retain the same account ID and linked history.
+
+Sales propose a unique editable invoice reference. Quick-payment buttons select cash, card, payment link, bank transfer, split or pay later. Draft PDF preview never posts an invoice; it is marked DRAFT. Closing a changed invoice form asks whether to discard it. The desktop navigation rail reserves vertical space to keep items stationary on hover.
+
+The sales/purchase overview shows invoice totals, payment-date collections, cash/non-cash mix, daily performance and a payment journal with both original invoice and payment dates. Clicking a doctor/category/date narrows the register. Filter by payment status, method, category and doctor; Today/This month restore date filtering after All history. PDF previews and Excel exports use the same filters, with daily and receipt detail sections. Payment journal exports reject more than 10,000 entries; the overview displays the latest 50 with an explicit export hint. Doctor figures are sales attribution and collections, not commission/payroll amounts.
+
+The dashboard includes permitted sales/purchase summaries alongside existing physical-cash figures. Customer accounts have invoice/activity search and paid/partial/unpaid/void history filters. Paying the entire account is explicitly labelled separately from selecting visible invoices.
+
+Reference review covered PadelTown customer creation/profile/search, combined entry and split allocation, transaction filters, daily/monthly and coach reports, and its downloaded daily sales PDF. Its invoice popup did not open in the review browser; no PadelTown financial records were changed. Northfield keeps clinic categories and does not copy court/package/wallet rules.

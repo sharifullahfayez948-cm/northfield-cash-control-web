@@ -1,4 +1,5 @@
 "use client";
+import CommerceSnapshot from "./CommerceSnapshot";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   LayoutDashboard,
@@ -931,7 +932,7 @@ function CashFlowChart({ days = [] }) {
     </div>
   );
 }
-function Dashboard({ user }) {
+function Dashboard({ user, access, onNavigate }) {
   const [date, setDate] = useState(today()),
     [d, setD] = useState(),
     [err, setErr] = useState("");
@@ -1001,6 +1002,12 @@ function Dashboard({ user }) {
           </div>
         ))}
       </div>
+      <CommerceSnapshot
+        date={date}
+        access={access}
+        onNavigate={onNavigate}
+        refreshKey={d}
+      />
       <div className="grid2 dashboardCharts">
         <div className="card chartCard">
           <div className="cardHeader">
@@ -6601,7 +6608,14 @@ export default function NorthfieldApp({ user }) {
     );
   let body =
     page === "Dashboard" ? (
-      <Dashboard user={user} />
+      <Dashboard
+        user={user}
+        access={access}
+        onNavigate={(name) => {
+          setInvoiceRequest(null);
+          setPage(name);
+        }}
+      />
     ) : page === "Sales" ? (
       <CommerceCenter
         key="sales"

@@ -473,3 +473,10 @@ test("new tables deny anonymous access; schema can run twice without duplicating
   );
   await db.exec("reset role");
 });
+
+test("duplicate directory names produce an account-specific error and do not create another account", async (t) => {
+  const { db, service } = await setup(t);
+  await service.saveCatalog({catalogKind:"CUSTOMER",name:"Same Customer"},1);
+  await assert.rejects(service.saveCatalog({catalogKind:"CUSTOMER",name:" same customer "},1), /name already exists in the directory/);
+  assert.equal(Number((await db.query("select count(*) n from sales_purchase_catalog where kind='CUSTOMER'")).rows[0].n),1);
+});

@@ -929,3 +929,398 @@
     flex-wrap: wrap;
   }
 }
+/* Searchable directories and quick reception entry */
+.spPicker {
+  position: relative;
+}
+.spMatches {
+  position: absolute;
+  z-index: 12;
+  left: 0;
+  right: 0;
+  top: 100%;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--spPanel);
+  border: 1px solid var(--spBorder);
+  border-radius: 14px;
+  box-shadow: 0 14px 36px #08263a28;
+}
+.spMatches > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  border-radius: 9px;
+  text-align: left;
+  color: var(--spText);
+  background: transparent;
+  cursor: pointer;
+}
+.spMatches > button[aria-selected="true"],
+.spMatches > button:hover {
+  background: #b7944920;
+}
+.spMatches b,
+.spMatches small {
+  display: block;
+}
+.spMatches small {
+  color: var(--spMuted);
+  margin-top: 4px;
+}
+.spMatches p {
+  padding: 10px;
+  font-size: 12px;
+  color: var(--spMuted);
+}
+.spMiniAvatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #174962;
+  color: #fff;
+  font-weight: 700;
+}
+.spIdentity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 10px 12px;
+  margin: 10px 0;
+  background: #b7944910;
+  border: 1px solid #b7944930;
+  border-radius: 10px;
+  font-size: 11px;
+}
+.spIdentity span {
+  color: var(--spMuted);
+}
+.spIdentity button {
+  margin-left: auto;
+  border: 0;
+  color: var(--spText);
+  background: none;
+  cursor: pointer;
+  font-size: 18px;
+}
+.spDirectoryModal {
+  max-width: 660px;
+  animation: spEnter 160ms ease-out;
+}
+.spDirectoryModal .spEditorFooter {
+  padding-top: 20px;
+  margin-top: 20px;
+  border-top: 1px solid var(--spBorder);
+}
+.spEditorFooter small {
+  color: var(--spMuted);
+  margin-left: auto;
+}
+.spDiscard {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #b79449;
+  border-radius: 12px;
+}
+.spDiscard .spActions {
+  margin-top: 14px;
+}
+.spQuickPayment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  margin: 10px 0 22px;
+  border: 1px solid var(--spBorder);
+  background: #b794490a;
+  border-radius: 14px;
+}
+.spQuickPayment > span {
+  font-size: 12px;
+  font-weight: 700;
+  margin-right: 8px;
+}
+.spQuickPayment button {
+  padding: 10px 14px;
+  border: 1px solid var(--spBorder);
+  border-radius: 10px;
+  background: var(--spPanel);
+  color: var(--spText);
+  cursor: pointer;
+}
+.spQuickPayment button[aria-pressed="true"] {
+  background: #123b54;
+  color: #fff;
+  border-color: #ad914c;
+  box-shadow: inset 0 0 0 1px #ad914c;
+}
+.spSearchContext {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--spMuted);
+  margin-top: 12px;
+}
+.spSearchContext button {
+  color: var(--spText);
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.spCatalogActions > button {
+  min-height: 34px;
+}
+@keyframes spEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spDirectoryModal {
+    animation: none;
+  }
+}
+.spManagementHero {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: center;
+  padding: 28px;
+  margin: 24px 0;
+  border: 1px solid #aa915b;
+  border-radius: 20px;
+  background: linear-gradient(125deg, #092c43, #245367);
+  color: #fff;
+}
+.spManagementHero small {
+  display: block;
+  color: #e1c785;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+}
+.spManagementHero h2 {
+  margin: 12px 0;
+  font-size: 26px;
+}
+.spManagementHero p {
+  max-width: 650px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #cadce4;
+  margin: 0;
+}
+.spManagementHero > div:last-child {
+  padding-left: 24px;
+  border-left: 1px solid #ffffff30;
+  min-width: 190px;
+}
+.spManagementHero b,
+.spManagementHero span {
+  display: block;
+  margin-top: 12px;
+}
+.spManagementHero span {
+  color: #e5ce94;
+}
+.spInsightGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.spOverview .spPanel {
+  margin-top: 20px;
+}
+.spRankings {
+  padding: 12px 24px 24px;
+}
+.spRankings > button {
+  display: block;
+  width: 100%;
+  padding: 14px 0;
+  border: 0;
+  background: none;
+  color: var(--spText);
+  text-align: left;
+  cursor: pointer;
+}
+.spRankings span {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+.spRankings i {
+  display: block;
+  height: 6px;
+  border-radius: 9px;
+  margin: 9px 0 7px;
+  background: linear-gradient(90deg, #b89b54, #285b73);
+}
+.spRankings small {
+  font-size: 10px;
+  color: var(--spMuted);
+}
+.spMethodGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 22px;
+}
+.spMethodGrid > div {
+  border: 1px solid var(--spBorder);
+  background: #aa915b08;
+  padding: 16px;
+  border-radius: 12px;
+}
+.spMethodGrid span,
+.spMethodGrid b,
+.spMethodGrid small {
+  display: block;
+}
+.spMethodGrid span {
+  font-size: 11px;
+  color: var(--spMuted);
+}
+.spMethodGrid b {
+  margin: 9px 0;
+  font-size: 17px;
+}
+.spMethodGrid small {
+  font-size: 10px;
+  color: var(--spMuted);
+}
+.spTextButton {
+  border: 0;
+  background: none;
+  padding: 5px 0;
+  color: var(--spText);
+  cursor: pointer;
+  text-decoration: underline;
+  font-weight: 650;
+  text-align: left;
+}
+@media (max-width: 800px) {
+  .spInsightGrid {
+    grid-template-columns: 1fr;
+  }
+  .spManagementHero {
+    grid-template-columns: 1fr;
+    padding: 22px;
+  }
+  .spManagementHero > div:last-child {
+    border-left: 0;
+    padding: 16px 0 0;
+    border-top: 1px solid #ffffff30;
+  }
+  .spMethodGrid b {
+    font-size: 15px;
+  }
+}
+.spReportPreview {
+  width: min(1160px, 96vw);
+  max-width: 1160px;
+}
+.spReportPreview iframe {
+  width: 100%;
+  height: 62dvh;
+  border: 1px solid var(--spBorder);
+  border-radius: 12px;
+  background: #edf1f5;
+}
+/* Keep navigation targets stationary when the desktop rail expands. */
+@media (min-width: 1001px) {
+  .app .sidebar .workspaceLabel,
+  .app .sidebar:not(:hover) .workspaceLabel {
+    display: block !important;
+    height: 20px;
+    min-height: 20px;
+    margin: 6px 0;
+  }
+  .app .sidebar:not(:hover) .workspaceLabel {
+    visibility: hidden;
+  }
+  .app .sidebar .brand,
+  .app .sidebar:hover .brand,
+  .app .sidebar:not(:hover) .brand {
+    height: 70px;
+    min-height: 70px;
+    flex-shrink: 0;
+  }
+  .app .sidebar .nav,
+  .app .sidebar:hover .nav {
+    gap: 5px;
+  }
+  .app .sidebar .nav button,
+  .app .sidebar:hover .nav button {
+    height: 50px;
+    min-height: 50px;
+    flex-shrink: 0;
+  }
+  .app .sidebar .sidebarFooter,
+  .app .sidebar:hover .sidebarFooter {
+    height: 158px;
+    min-height: 158px;
+    flex-shrink: 0;
+  }
+  .app .sidebar:not(:hover) .secureStatus {
+    display: block !important;
+    visibility: hidden;
+    height: 46px;
+    margin-bottom: 7px;
+  }
+}
+.spAccountActivitySearch {
+  display: flex;
+  gap: 12px;
+  margin: 18px 0;
+}
+.spAccountActivitySearch .spField:first-child {
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .spAccountActivitySearch {
+    flex-direction: column;
+  }
+}
+.spDirectoryModal {
+  width: min(660px, calc(100vw - 32px));
+  min-width: 0;
+  max-width: calc(100vw - 32px);
+}
+.spPaymentShade > .spModal {
+  min-width: 0;
+  max-width: calc(100vw - 32px);
+}
+.spReportPreview .spActions a {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+@media (max-width: 600px) {
+  .spPaymentShade {
+    padding: 10px;
+  }
+  .spEditorFooter small {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}
