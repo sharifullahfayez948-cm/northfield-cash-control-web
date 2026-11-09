@@ -12,7 +12,7 @@ import {
   Users,
   CheckCircle2,
 } from "lucide-react";
-import { PaymentParts, CatalogPicker } from "./CommerceFields";
+import { PaymentParts, CatalogEditor } from "./CommerceFields";
 import { businessToday } from "@/lib/commerce-model.mjs";
 import { outputInvoice, accountReport } from "@/lib/commerce-pdf";
 import { loadBrand } from "@/lib/luxuryPdf";
@@ -52,6 +52,8 @@ export default function AccountCenter({
     [selected, setSelected] = useState(null),
     [detail, setDetail] = useState(null),
     [view, setView] = useState("bills"),
+    [activitySearch, setActivitySearch] = useState(""),
+    [activityStatus, setActivityStatus] = useState("ALL"),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
@@ -60,7 +62,7 @@ export default function AccountCenter({
     [checked, setChecked] = useState([]),
     [payment, setPayment] = useState(null),
     [adding, setAdding] = useState(false),
-    [accountName, setAccountName] = useState(""),
+    [accountEditor, setAccountEditor] = useState({}),
     [catalog, setCatalog] = useState([]),
     [expanded, setExpanded] = useState(null),
     [period, setPeriod] = useState({ from: "", to: "" });
@@ -95,6 +97,8 @@ export default function AccountCenter({
     };
   }, [kind, filters, refresh]);
   useEffect(() => {
+    setActivitySearch("");
+    setActivityStatus("ALL");
     if (!selected) {
       setDetail(null);
       return;
@@ -107,7 +111,6 @@ export default function AccountCenter({
       .then((d) => {
         if (n === detailSeq.current) {
           setDetail(d);
-          setAccountName(d.account.name);
         }
       })
       .catch((e) => {
@@ -222,12 +225,40 @@ export default function AccountCenter({
     try {
       const d = await api(`/api/commerce?kind=${kind}&catalog=1`);
       setCatalog(d.catalog);
-      setAccountName(detail?.account.name || "");
+      setAccountEditor(
+        d.catalog.find((r) => String(r.id) === String(selected)) ||
+          detail.account,
+      );
       setAdding(true);
     } catch (e) {
       setError(e.message);
     }
   }
+  const activityMatches = (d) => {
+    const q = activitySearch.trim().toLowerCase();
+    const status =
+      d.status === "VOID"
+        ? "VOID"
+        : Number(d.balance) === 0
+          ? "PAID"
+          : Number(d.paid) > 0
+            ? "PARTIAL"
+            : "UNPAID";
+    const payments = detail?.payments
+      .filter((p) => String(p.document_id) === String(d.id))
+      .map((p) => `${p.method} ${p.reference_no || ""}`)
+      .join(" ");
+    return (
+      (!q ||
+        `${d.invoice_no} TX-${d.id} ${d.date} ${d.staff_name} ${d.category} ${d.remarks} ${d.total} ${payments}`
+          .toLowerCase()
+          .includes(q)) &&
+      (view === "bills" ||
+        activityStatus === "ALL" ||
+        status === activityStatus)
+    );
+  };
+  const visibleBills = open.filter(activityMatches);
   const total = list?.totals || {};
   return (
     <div className="spWorkspace spAccounts">
@@ -261,8 +292,11 @@ export default function AccountCenter({
               className="btn btnPrimary"
               onClick={() => {
                 setCatalog([]);
-                setAccountName("");
+                setAccountEditor({});
                 setAdding(true);
+                  api(`/api/commerce?kind=${kind}&catalog=1`)
+                    .then((d) => setCatalog(d.catalog))
+                    .catch((e) => setError(e.message));
               }}
             >
               <PlusCircle size={17} />
@@ -345,6 +379,7 @@ export default function AccountCenter({
             >
               <option value="BALANCE">Highest balance</option>
               <option value="NAME">Name A–Z</option>
+              <option value="OLDEST">Oldest outstanding</option>
             </select>
           </div>
           <div className="spAccountRows" aria-busy={loading}>
@@ -401,27 +436,30 @@ export default function AccountCenter({
           </div>
         </aside>
         <section className="spAccountDetail">
-          {adding ? (
-            <div className="spPanel spAccountEditor">
-              <button className="btn btnSoft" onClick={() => setAdding(false)}>
-                Back to account
-              </button>
-              <CatalogPicker
-                label={sales ? "Customer" : "Supplier"}
-                items={catalog}
-                catalogKind={sales ? "CUSTOMER" : "SUPPLIER"}
-                kind={kind}
-                value={accountName}
-                id={catalog.length ? selected : null}
-                onChange={(name) => setAccountName(name)}
-                onSaved={(row) => {
-                  setAdding(false);
-                  setSelected(row.id);
-                  setRefresh((x) => x + 1);
-                }}
-              />
-            </div>
-          ) : !detail ? (
+          {adding && (
+            <CatalogEditor
+              label={sales ? "Customer" : "Supplier"}
+              initial={accountEditor}
+              items={catalog}
+              catalogKind={sales ? "CUSTOMER" : "SUPPLIER"}
+              kind={kind}
+              onClose={() => setAdding(false)}
+              onSaved={(row) => {
+                setAdding(false);
+                setSelected(row.id);
+                setFilters((f) => ({
+                  ...f,
+                  search: "",
+                  outstanding: "0",
+                  age: "ALL",
+                  page: 1,
+                }));
+                setView("bills");
+                setRefresh((x) => x + 1);
+              }}
+            />
+          )}
+          {!detail ? (
             <div className="spChooseAccount">
               <Wallet size={44} />
               <h3>
@@ -509,21 +547,56 @@ export default function AccountCenter({
                   </button>
                 ))}
               </div>
+              {view !== "statement" && (
+                <div className="spAccountActivitySearch">
+                  <label className="spField">
+                    <span>Search this account</span>
+                    <input
+                      placeholder="Invoice, date, doctor, category, payment or reference…"
+                      value={activitySearch}
+                      onChange={(e) => {
+                        setActivitySearch(e.target.value);
+                        setChecked([]);
+                      }}
+                    />
+                  </label>
+                  {view === "history" && (
+                    <label className="spField">
+                      <span>Invoice status</span>
+                      <select
+                        value={activityStatus}
+                        onChange={(e) => setActivityStatus(e.target.value)}
+                      >
+                        <option value="ALL">All statuses</option>
+                        <option value="PAID">Paid</option>
+                        <option value="PARTIAL">Partly paid</option>
+                        <option value="UNPAID">Unpaid</option>
+                        <option value="VOID">Voided</option>
+                      </select>
+                    </label>
+                  )}
+                </div>
+              )}
               {view === "bills" && (
                 <div className="spAccountPayBar">
                   <label>
                     <input
                       type="checkbox"
                       checked={
-                        open.length > 0 && checked.length === open.length
+                        visibleBills.length > 0 &&
+                        visibleBills.every((d) =>
+                          checked.includes(String(d.id)),
+                        )
                       }
                       onChange={(e) =>
                         setChecked(
-                          e.target.checked ? open.map((d) => String(d.id)) : [],
+                          e.target.checked
+                            ? visibleBills.map((d) => String(d.id))
+                            : [],
                         )
                       }
                     />{" "}
-                    Select all
+                    Select visible
                   </label>
                   {canWrite && (
                     <>
@@ -541,103 +614,103 @@ export default function AccountCenter({
                           startPayment(open.map((d) => String(d.id)))
                         }
                       >
-                        Pay all · {money(detail.balance)}
+                        Pay entire account · {money(detail.balance)}
                       </button>
                     </>
                   )}
                 </div>
               )}
               {view !== "statement" &&
-                (view === "bills" ? open : [...detail.documents].reverse()).map(
-                  (d) => (
-                    <article className="spBill" key={d.id}>
-                      <div className="spBillMain">
-                        {view === "bills" && (
-                          <input
-                            aria-label={`Select invoice ${d.invoice_no}`}
-                            type="checkbox"
-                            checked={checked.includes(String(d.id))}
-                            onChange={(e) =>
-                              setChecked((ids) =>
-                                e.target.checked
-                                  ? [...ids, String(d.id)]
-                                  : ids.filter((id) => id !== String(d.id)),
-                              )
-                            }
-                          />
-                        )}
-                        <button
-                          className="spBillText"
-                          onClick={() =>
-                            setExpanded(expanded === d.id ? null : d.id)
+                (view === "bills"
+                  ? visibleBills
+                  : [...detail.documents].reverse().filter(activityMatches)
+                ).map((d) => (
+                  <article className="spBill" key={d.id}>
+                    <div className="spBillMain">
+                      {view === "bills" && (
+                        <input
+                          aria-label={`Select invoice ${d.invoice_no}`}
+                          type="checkbox"
+                          checked={checked.includes(String(d.id))}
+                          onChange={(e) =>
+                            setChecked((ids) =>
+                              e.target.checked
+                                ? [...ids, String(d.id)]
+                                : ids.filter((id) => id !== String(d.id)),
+                            )
                           }
+                        />
+                      )}
+                      <button
+                        className="spBillText"
+                        onClick={() =>
+                          setExpanded(expanded === d.id ? null : d.id)
+                        }
+                      >
+                        <b>
+                          {d.invoice_no} · {d.category}
+                        </b>
+                        <small>
+                          {d.date} · {d.staff_name || d.kind}
+                        </small>
+                      </button>
+                      <div>
+                        <strong>
+                          {money(d.status === "VOID" ? 0 : d.balance)}
+                        </strong>
+                        <span
+                          className={`spBadge ${Number(d.balance) === 0 ? "paid" : ""}`}
                         >
-                          <b>
-                            {d.invoice_no} · {d.category}
-                          </b>
-                          <small>
-                            {d.date} · {d.staff_name || d.kind}
-                          </small>
-                        </button>
-                        <div>
-                          <strong>
-                            {money(d.status === "VOID" ? 0 : d.balance)}
-                          </strong>
-                          <span
-                            className={`spBadge ${Number(d.balance) === 0 ? "paid" : ""}`}
+                          {d.status === "VOID"
+                            ? "Void"
+                            : Number(d.balance) === 0
+                              ? "Paid"
+                              : Number(d.paid) > 0
+                                ? "Part paid"
+                                : "Unpaid"}
+                        </span>
+                      </div>
+                      {canWrite &&
+                        d.status === "POSTED" &&
+                        Number(d.balance) > 0 && (
+                          <button
+                            className="btn btnPrimary"
+                            onClick={() => startPayment([String(d.id)])}
                           >
-                            {d.status === "VOID"
-                              ? "Void"
-                              : Number(d.balance) === 0
-                                ? "Paid"
-                                : Number(d.paid) > 0
-                                  ? "Part paid"
-                                  : "Unpaid"}
-                          </span>
-                        </div>
-                        {canWrite &&
-                          d.status === "POSTED" &&
-                          Number(d.balance) > 0 && (
-                            <button
-                              className="btn btnPrimary"
-                              onClick={() => startPayment([String(d.id)])}
-                            >
-                              Pay
-                            </button>
-                          )}
+                            Pay
+                          </button>
+                        )}
+                      <button
+                        className="btn btnSoft"
+                        aria-label={`Print invoice ${d.invoice_no}`}
+                        onClick={() => printInvoice(d.id)}
+                      >
+                        <Printer size={17} />
+                      </button>
+                    </div>
+                    {expanded === d.id && (
+                      <div className="spBillExpanded">
+                        <p>
+                          Before VAT {money(d.before_vat)} · VAT {money(d.vat)}{" "}
+                          · Total {money(d.total)} · Paid {money(d.paid)}
+                        </p>
+                        <p>{d.remarks || "No remarks."}</p>
                         <button
                           className="btn btnSoft"
-                          aria-label={`Print invoice ${d.invoice_no}`}
-                          onClick={() => printInvoice(d.id)}
+                          onClick={() => {
+                            window.dispatchEvent(
+                              new CustomEvent("northfield:open-invoice", {
+                                detail: { id: d.id, kind: d.kind },
+                              }),
+                            );
+                          }}
                         >
-                          <Printer size={17} />
+                          Open invoice & payments
                         </button>
                       </div>
-                      {expanded === d.id && (
-                        <div className="spBillExpanded">
-                          <p>
-                            Before VAT {money(d.before_vat)} · VAT{" "}
-                            {money(d.vat)} · Total {money(d.total)} · Paid{" "}
-                            {money(d.paid)}
-                          </p>
-                          <p>{d.remarks || "No remarks."}</p>
-                          <button
-                            className="btn btnSoft"
-                            onClick={() => {
-                              window.dispatchEvent(
-                                new CustomEvent("northfield:open-invoice", {
-                                  detail: { id: d.id, kind: d.kind },
-                                }),
-                              );
-                            }}
-                          >
-                            Open invoice & payments
-                          </button>
-                        </div>
-                      )}
-                    </article>
-                  ),
-                )}
+                    )}
+                  </article>
+                ))}
               {view === "bills" && !open.length && (
                 <p className="spEmpty">
                   This account has no outstanding invoices.

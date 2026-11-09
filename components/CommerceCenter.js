@@ -16,8 +16,14 @@ import * as XLSX from "xlsx";
 import { businessToday, PAYMENT_METHODS } from "@/lib/commerce-model.mjs";
 import { CatalogPicker, PaymentParts } from "./CommerceFields";
 import CommerceOverlay from "./CommerceOverlay";
+import CommerceOverview from "./CommerceOverview";
+import CommercePreview from "./CommercePreview";
 import AccountCenter from "./AccountCenter";
-import { outputInvoice, registerReport } from "@/lib/commerce-pdf";
+import {
+  outputInvoice,
+  registerReport,
+  invoiceReport,
+} from "@/lib/commerce-pdf";
 import { loadBrand } from "@/lib/luxuryPdf";
 
 const money = (value) =>
@@ -115,6 +121,9 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
     from: `${today.slice(0, 7)}-01`,
     to: today,
     staff: "",
+    status: "",
+    category: "",
+    method: "",
     search: "",
     page: 1,
   });
@@ -122,14 +131,17 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
-    [view, setView] = useState("register"),
+    [view, setView] = useState("overview"),
     [modal, setModal] = useState(null),
     [busy, setBusy] = useState(false),
     [formError, setFormError] = useState(""),
     [history, setHistory] = useState(null),
     [savedInvoice, setSavedInvoice] = useState(null),
     [portal, setPortal] = useState(false),
+    [preview, setPreview] = useState(null),
+    [discardEntry, setDiscardEntry] = useState(false),
     [refresh, setRefresh] = useState(0);
+  const dirtyEntry = useRef(false);
   const sequence = useRef(0),
     submitting = useRef(false),
     defaults = useRef({});
@@ -169,14 +181,27 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
   }, [kind, filters, refresh]);
   const setFilter = (key, value) =>
     setFilters((f) => ({ ...f, [key]: value, page: 1 }));
+  function closeEntry() {
+    if (busy) return;
+    if (
+      dirtyEntry.current &&
+      ["create", "edit", "pay", "editPayment"].includes(modal?.action)
+    )
+      setDiscardEntry(true);
+    else setModal(null);
+  }
   function openNew() {
+    dirtyEntry.current = false;
+    setDiscardEntry(false);
     setFormError("");
     setModal({
       action: "create",
       kind: sales ? "SALE" : "PURCHASE",
       date: defaults.current.date || today,
       paymentDate: defaults.current.paymentDate || today,
-      invoice: "",
+      invoice: sales
+        ? `NF-${today.replaceAll("-", "")}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
+        : "",
       party: "",
       staff: defaults.current.staff || "",
       staffId: defaults.current.staffId || null,
@@ -197,6 +222,8 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
     });
   }
   function editInvoice(row) {
+    dirtyEntry.current = false;
+    setDiscardEntry(false);
     setFormError("");
     setModal({
       action: "edit",
@@ -230,17 +257,98 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
       setError(e.message);
     }
   }
+  async function previewInvoice(row) {
+    setBusy(true);
+    try {
+      const d = row
+        ? await request(`/api/commerce?kind=${kind}&id=${row.id}`)
+        : (() => {
+            const party = data?.catalog.find(
+              (r) => String(r.id) === String(modal.partyId),
+            );
+            const payments =
+              modal.paymentMode === "CREDIT"
+                ? []
+                : modal.paymentMode === "SPLIT"
+                  ? modal.payments
+                  : [
+                      {
+                        method: modal.method,
+                        amount:
+                          modal.paymentMode === "FULL" ? total : modal.paid,
+                        reference: modal.reference,
+                      },
+                    ];
+            const paid = payments.reduce(
+              (n, p) => n + Number(p.amount || 0),
+              0,
+            );
+            return {
+              draft: true,
+              document: {
+                kind: modal.kind,
+                invoice_no: modal.invoice || "DRAFT",
+                date: modal.date,
+                party: modal.party || "Customer",
+                party_id: modal.partyId,
+                phone: party?.phone,
+                address: party?.address,
+                tax_no: party?.tax_no,
+                staff_name: modal.staff,
+                category: modal.category || "Service",
+                remarks: modal.remarks,
+                before_vat: before,
+                vat,
+                total,
+                paid,
+                balance: total - paid,
+                status: "DRAFT",
+              },
+              payments: payments
+                .filter((p) => Number(p.amount) > 0)
+                .map((p) => ({
+                  ...p,
+                  date: modal.paymentDate,
+                  reference_no: p.reference,
+                  status: "POSTED",
+                })),
+            };
+          })();
+      setPreview({
+        report: invoiceReport(d, await loadBrand()),
+        title: d.draft
+          ? "Draft invoice · not saved"
+          : `Invoice ${d.document.invoice_no}`,
+        filename: `Northfield-${d.draft ? "Draft-" : "Invoice-"}${String(d.document.invoice_no).replace(/[^a-z0-9_-]/gi, "-")}.pdf`,
+      });
+    } catch (e) {
+      setFormError(e.message);
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function pdf() {
     setBusy(true);
     try {
       const d = await request(`${url()}&export=1`);
-      registerReport(d, await loadBrand(), {
+      const report = registerReport(d, await loadBrand(), {
         sales,
         from: filters.all === "1" ? undefined : filters.from,
         to: filters.all === "1" ? undefined : filters.to,
         staff: filters.staff,
         search: filters.search,
-      }).save(`Northfield-${sales ? "Sales" : "Purchases"}-Report.pdf`);
+        category: filters.category,
+        status: filters.status,
+        method: filters.method,
+      });
+      setPreview({
+        report,
+        title: sales
+          ? "Sales & collections report"
+          : "Purchases & payments report",
+        filename: `Northfield-${sales ? "Sales" : "Purchases"}-Report.pdf`,
+      });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -256,6 +364,7 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
           : Math.round(before * 100 * 0.05) / 100,
     total = Math.round((before + vat) * 100) / 100;
   function change(key, value) {
+    dirtyEntry.current = true;
     setModal((m) => ({ ...m, [key]: value }));
   }
   async function save(e) {
@@ -386,6 +495,34 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
         ),
         "Payments by Payment Date",
       );
+      XLSX.utils.book_append_sheet(
+        book,
+        XLSX.utils.json_to_sheet(
+          d.daily.map((r) => ({
+            Date: r.date,
+            Invoices: Number(r.entries),
+            Total: Number(r.total),
+            "Collected to date": Number(r.paid),
+            Outstanding: Number(r.balance),
+          })),
+        ),
+        "Daily Performance",
+      );
+      XLSX.utils.book_append_sheet(
+        book,
+        XLSX.utils.json_to_sheet(
+          d.receipts.map((r) => ({
+            "Payment date": r.date,
+            "Invoice date": r.invoice_date,
+            Invoice: r.invoice_no,
+            Account: r.party,
+            Method: r.method,
+            Reference: r.reference_no,
+            Amount: Number(r.amount),
+          })),
+        ),
+        "Payment Journal",
+      );
       XLSX.writeFile(
         book,
         `Northfield-${sales ? "Sales" : "Purchases"}-${filters.from}-${filters.to}.xlsx`,
@@ -483,6 +620,41 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
             </select>
           </Field>
         )}
+        <Field label="Payment status">
+          <select
+            value={filters.status}
+            onChange={(e) => setFilter("status", e.target.value)}
+          >
+            <option value="">All statuses</option>
+            <option value="UNPAID">Unpaid</option>
+            <option value="PARTIAL">Partly paid</option>
+            <option value="PAID">Paid in full</option>
+            <option value="POSTED">Active invoices</option>
+            <option value="VOID">Voided</option>
+          </select>
+        </Field>
+        <Field label="Category">
+          <select
+            value={filters.category}
+            onChange={(e) => setFilter("category", e.target.value)}
+          >
+            <option value="">All categories</option>
+            {data?.categoryOptions.map((name) => (
+              <option key={name}>{name}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Payment method">
+          <select
+            value={filters.method}
+            onChange={(e) => setFilter("method", e.target.value)}
+          >
+            <option value="">All methods</option>
+            {PAYMENT_METHODS.map((name) => (
+              <option key={name}>{name}</option>
+            ))}
+          </select>
+        </Field>
         <Field label="Find an invoice">
           <input
             placeholder="Invoice, account, phone, doctor, amount, payment or remarks"
@@ -493,7 +665,13 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
         <button
           className="btn btnSoft"
           onClick={() =>
-            setFilters({ ...filters, from: today, to: today, page: 1 })
+            setFilters({
+              ...filters,
+              all: "0",
+              from: today,
+              to: today,
+              page: 1,
+            })
           }
         >
           Today
@@ -503,6 +681,7 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
           onClick={() =>
             setFilters({
               ...filters,
+              all: "0",
               from: `${today.slice(0, 7)}-01`,
               to: today,
               page: 1,
@@ -522,6 +701,35 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
           }
         >
           {filters.all === "1" ? "Use date range" : "All history"}
+        </button>
+      </div>
+      <div className="spSearchContext" role="status">
+        <span>
+          {filters.all === "1"
+            ? "All history"
+            : `${filters.from} → ${filters.to}`}{" "}
+          ·{" "}
+          {loading
+            ? "Searching…"
+            : `${data?.totals?.count || 0} matching entries`}
+        </span>
+        <button
+          type="button"
+          onClick={() =>
+            setFilters({
+              from: `${today.slice(0, 7)}-01`,
+              to: today,
+              all: "0",
+              staff: "",
+              status: "",
+              category: "",
+              method: "",
+              search: "",
+              page: 1,
+            })
+          }
+        >
+          Reset filters
         </button>
       </div>
       <button className="spOutstanding" onClick={() => setPortal(true)}>
@@ -553,6 +761,7 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
       </div>
       <div className="spTabs" role="tablist" aria-label="Register views">
         {[
+          ["overview", "Overview & receipts", FileText],
           ["register", "Register", Receipt],
           ...(sales ? [["doctors", "Doctor performance", Users]] : []),
           ["reports", "Categories & payments", Wallet],
@@ -575,6 +784,31 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
       ) : (
         data && (
           <>
+            {view === "overview" && (
+              <CommerceOverview
+                data={data}
+                sales={sales}
+                onStaff={(name) => {
+                  setFilter("staff", name);
+                  setView("register");
+                }}
+                onCategory={(name) => {
+                  setFilter("category", name);
+                  setView("register");
+                }}
+                onDay={(date) => {
+                  setFilters((f) => ({
+                    ...f,
+                    from: date,
+                    to: date,
+                    all: "0",
+                    page: 1,
+                  }));
+                  setView("register");
+                }}
+                onInvoice={details}
+              />
+            )}
             {view === "register" && (
               <section className="spPanel">
                 <div className="spPanelTitle">
@@ -662,6 +896,12 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
                                   Edit invoice
                                 </button>
                               )}
+                              <button
+                                onClick={() => previewInvoice(row)}
+                                disabled={busy}
+                              >
+                                Preview invoice
+                              </button>
                               <button onClick={() => printInvoice(row.id)}>
                                 Print invoice
                               </button>
@@ -761,7 +1001,10 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
                 </p>
                 <SummaryTable
                   title="Doctor & staff sales"
-                  rows={data.doctors}
+                  rows={data.doctors.map((d) => ({
+                    ...d,
+                    balance: Number(d.total) - Number(d.paid),
+                  }))}
                   columns={[
                     ["staff_name", "Doctor / Staff"],
                     ["entries", "Invoices"],
@@ -769,6 +1012,7 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
                     ["vat", "VAT", true],
                     ["total", "Total sales", true],
                     ["paid", "Collected to date", true],
+                    ["balance", "Outstanding", true],
                   ]}
                 />
               </>
@@ -804,6 +1048,9 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
             )}
           </>
         )
+      )}
+      {preview && (
+        <CommercePreview {...preview} onClose={() => setPreview(null)} />
       )}
       {portal && (
         <CommerceOverlay
@@ -852,7 +1099,7 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
                         : `Invoice · ${modal.row.invoice_no}`
           }
           busy={busy}
-          onClose={() => setModal(null)}
+          onClose={closeEntry}
         >
           {formError && (
             <div className="spAlert" role="alert">
@@ -979,6 +1226,9 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
           ) : (
             <form
               onSubmit={save}
+              onChange={() => {
+                dirtyEntry.current = true;
+              }}
               onKeyDown={(e) => {
                 if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
                   e.preventDefault();
@@ -1004,6 +1254,50 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
               )}
               {["create", "edit"].includes(modal.action) && (
                 <>
+                  {modal.action === "create" && (
+                    <div
+                      className="spQuickPayment"
+                      role="group"
+                      aria-label="Quick payment selection"
+                    >
+                      <span>Quick payment</span>
+                      {["Cash", "Card", "Payment Link", "Bank Transfer"].map(
+                        (method) => (
+                          <button
+                            type="button"
+                            key={method}
+                            aria-pressed={
+                              modal.paymentMode === "FULL" &&
+                              modal.method === method
+                            }
+                            onClick={() =>
+                              setModal((m) => ({
+                                ...m,
+                                paymentMode: "FULL",
+                                method,
+                              }))
+                            }
+                          >
+                            {method}
+                          </button>
+                        ),
+                      )}
+                      <button
+                        type="button"
+                        aria-pressed={modal.paymentMode === "SPLIT"}
+                        onClick={() => change("paymentMode", "SPLIT")}
+                      >
+                        Split payment
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={modal.paymentMode === "CREDIT"}
+                        onClick={() => change("paymentMode", "CREDIT")}
+                      >
+                        Pay later
+                      </button>
+                    </div>
+                  )}
                   <div className="spForm">
                     {!sales && (
                       <Field label="Entry type">
@@ -1097,7 +1391,7 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
                         value={modal.vatMode}
                         onChange={(e) => change("vatMode", e.target.value)}
                       >
-                        <option value="STANDARD">5% · as in Excel</option>
+                        <option value="STANDARD">5% VAT</option>
                         <option value="NONE">No VAT</option>
                         <option value="CUSTOM">Enter invoice VAT amount</option>
                       </select>
@@ -1310,15 +1604,51 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
                   </Field>
                 </>
               )}
+              {discardEntry && (
+                <div className="spDiscard" role="alert">
+                  <b>Leave this entry without saving?</b>
+                  <p>The invoice has not been posted.</p>
+                  <div className="spActions">
+                    <button
+                      type="button"
+                      className="btn btnPrimary"
+                      onClick={() => setDiscardEntry(false)}
+                    >
+                      Keep editing
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btnSoft"
+                      onClick={() => {
+                        dirtyEntry.current = false;
+                        setDiscardEntry(false);
+                        setModal(null);
+                      }}
+                    >
+                      Discard entry
+                    </button>
+                  </div>
+                </div>
+              )}
               <footer className="spFormActions">
                 <button
                   type="button"
                   className="btn btnSoft"
                   disabled={busy}
-                  onClick={() => setModal(null)}
+                  onClick={closeEntry}
                 >
                   Cancel
                 </button>
+                {modal.action === "create" && (
+                  <button
+                    type="button"
+                    className="btn btnSoft"
+                    disabled={busy || !(total > 0)}
+                    onClick={() => previewInvoice(null)}
+                  >
+                    Preview invoice
+                  </button>
+                )}
                 {modal.action === "create" && (
                   <button
                     type="submit"
