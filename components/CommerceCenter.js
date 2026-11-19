@@ -52,11 +52,19 @@ function Field({ label, children, wide = false }) {
     </label>
   );
 }
-function Modal({ title, children, onClose, busy }) {
+function Group({ label, children, wide = false }) {
+  return (
+    <div className={`spField ${wide ? "spWide" : ""}`} role="group" aria-label={label}>
+      <span>{label}</span>
+      {children}
+    </div>
+  );
+}
+function Modal({ title, children, onClose, busy, wide = false }) {
   return (
     <CommerceOverlay onClose={onClose} busy={busy}>
       <section
-        className="spModal"
+        className={`spModal ${wide ? "spModalWide" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -1099,6 +1107,7 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
                         : `Invoice · ${modal.row.invoice_no}`
           }
           busy={busy}
+          wide={["create", "edit"].includes(modal.action)}
           onClose={closeEntry}
         >
           {formError && (
@@ -1253,276 +1262,521 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
                 </div>
               )}
               {["create", "edit"].includes(modal.action) && (
-                <>
-                  {modal.action === "create" && (
-                    <div
-                      className="spQuickPayment"
-                      role="group"
-                      aria-label="Quick payment selection"
-                    >
-                      <span>Quick payment</span>
-                      {["Cash", "Card", "Payment Link", "Bank Transfer"].map(
-                        (method) => (
-                          <button
-                            type="button"
-                            key={method}
-                            aria-pressed={
-                              modal.paymentMode === "FULL" &&
-                              modal.method === method
-                            }
-                            onClick={() =>
+                <div className="spEntry">
+                  <div className="spEntryMain">
+                    <section className="spCard">
+                      <div className="spCardTitle">
+                        <span className="spCardIcon">
+                          <Receipt size={18} />
+                        </span>
+                        <div>
+                          <b>Invoice details</b>
+                          <small>Date, number and entry type</small>
+                        </div>
+                      </div>
+                      <div className="spForm">
+                        {!sales && (
+                          <Group label="Entry type">
+                            <div className="spSegment" role="group" aria-label="Entry type">
+                              {[
+                                ["PURCHASE", "Purchase"],
+                                ["EXPENSE", "Expense"],
+                              ].map(([value, label]) => (
+                                <button
+                                  type="button"
+                                  key={value}
+                                  disabled={modal.action === "edit"}
+                                  aria-pressed={modal.kind === value}
+                                  onClick={() => change("kind", value)}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </Group>
+                        )}
+                        <Field label="Invoice date">
+                          <input
+                            required
+                            type="date"
+                            value={modal.date}
+                            onChange={(e) =>
                               setModal((m) => ({
                                 ...m,
-                                paymentMode: "FULL",
-                                method,
+                                date: e.target.value,
+                                paymentDate:
+                                  m.paymentDate === m.date
+                                    ? e.target.value
+                                    : m.paymentDate,
                               }))
                             }
-                          >
-                            {method}
-                          </button>
-                        ),
-                      )}
-                      <button
-                        type="button"
-                        aria-pressed={modal.paymentMode === "SPLIT"}
-                        onClick={() => change("paymentMode", "SPLIT")}
-                      >
-                        Split payment
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={modal.paymentMode === "CREDIT"}
-                        onClick={() => change("paymentMode", "CREDIT")}
-                      >
-                        Pay later
-                      </button>
-                    </div>
-                  )}
-                  <div className="spForm">
-                    {!sales && (
-                      <Field label="Entry type">
-                        <select
-                          disabled={modal.action === "edit"}
-                          value={modal.kind}
-                          onChange={(e) => change("kind", e.target.value)}
-                        >
-                          <option value="PURCHASE">Purchase</option>
-                          <option value="EXPENSE">Expense</option>
-                        </select>
-                      </Field>
-                    )}
-                    <Field label="Invoice date">
-                      <input
-                        required
-                        type="date"
-                        value={modal.date}
-                        onChange={(e) =>
-                          setModal((m) => ({
-                            ...m,
-                            date: e.target.value,
-                            paymentDate:
-                              m.paymentDate === m.date
-                                ? e.target.value
-                                : m.paymentDate,
-                          }))
-                        }
-                      />
-                    </Field>
-                    <Field label="Invoice / reference number">
-                      <input
-                        id="spInvoiceInput"
-                        autoFocus
-                        required
-                        maxLength={240}
-                        value={modal.invoice}
-                        onChange={(e) => change("invoice", e.target.value)}
-                      />
-                    </Field>
-                    <CatalogPicker
-                      label={sales ? "Customer" : "Supplier"}
-                      items={data?.catalog}
-                      catalogKind={sales ? "CUSTOMER" : "SUPPLIER"}
-                      kind={kind}
-                      value={modal.party}
-                      id={modal.partyId}
-                      onChange={(party, partyId) =>
-                        setModal((m) => ({ ...m, party, partyId }))
-                      }
-                      onSaved={() => setRefresh((x) => x + 1)}
-                    />
-                    {sales && (
-                      <CatalogPicker
-                        label="Doctor / staff"
-                        items={data?.catalog}
-                        catalogKind="STAFF"
-                        kind={kind}
-                        value={modal.staff}
-                        id={modal.staffId}
-                        onChange={(staff, staffId) =>
-                          setModal((m) => ({ ...m, staff, staffId }))
-                        }
-                        onSaved={() => setRefresh((x) => x + 1)}
-                      />
-                    )}
-                    <CatalogPicker
-                      label="Category"
-                      items={data?.catalog}
-                      catalogKind={sales ? "SALE_CATEGORY" : "BUY_CATEGORY"}
-                      kind={kind}
-                      value={modal.category}
-                      id={modal.categoryId}
-                      onChange={(category, categoryId) =>
-                        setModal((m) => ({ ...m, category, categoryId }))
-                      }
-                      onSaved={() => setRefresh((x) => x + 1)}
-                    />
-                    <Field label="Amount before VAT (AED)">
-                      <input
-                        required
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={modal.before}
-                        onChange={(e) => change("before", e.target.value)}
-                      />
-                    </Field>
-                    <Field label="VAT">
-                      <select
-                        value={modal.vatMode}
-                        onChange={(e) => change("vatMode", e.target.value)}
-                      >
-                        <option value="STANDARD">5% VAT</option>
-                        <option value="NONE">No VAT</option>
-                        <option value="CUSTOM">Enter invoice VAT amount</option>
-                      </select>
-                    </Field>
-                    {modal.vatMode === "CUSTOM" && (
-                      <Field label="VAT amount (AED)">
-                        <input
-                          required
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={modal.vat}
-                          onChange={(e) => change("vat", e.target.value)}
-                        />
-                      </Field>
-                    )}
-                    {modal.action === "create" && (
-                      <>
-                        <Field label="Payment status">
-                          <select
-                            value={modal.paymentMode}
-                            onChange={(e) =>
-                              change("paymentMode", e.target.value)
-                            }
-                          >
-                            <option value="FULL">Paid in full</option>
-                            <option value="PARTIAL">Part payment</option>
-                            <option value="SPLIT">Split payment</option>
-                            <option value="CREDIT">
-                              Credit / not paid yet
-                            </option>
-                          </select>
+                          />
                         </Field>
-                        {!["CREDIT", "SPLIT"].includes(modal.paymentMode) && (
-                          <>
-                            <Field label="Payment method">
-                              <select
-                                value={modal.method}
-                                onChange={(e) =>
-                                  change("method", e.target.value)
-                                }
+                        <Field label="Invoice / reference number">
+                          <input
+                            id="spInvoiceInput"
+                            autoFocus
+                            required
+                            maxLength={240}
+                            value={modal.invoice}
+                            onChange={(e) => change("invoice", e.target.value)}
+                          />
+                        </Field>
+                      </div>
+                    </section>
+
+                    <section className="spCard spCardRaised">
+                      <div className="spCardTitle">
+                        <span className="spCardIcon">
+                          <Users size={18} />
+                        </span>
+                        <div>
+                          <b>{sales ? "Customer & doctor" : "Supplier & category"}</b>
+                          <small>
+                            Search the directory or add a new{" "}
+                            {sales ? "customer" : "supplier"} in one click
+                          </small>
+                        </div>
+                      </div>
+                      <div className="spForm">
+                        <CatalogPicker
+                          label={sales ? "Customer" : "Supplier"}
+                          items={data?.catalog}
+                          catalogKind={sales ? "CUSTOMER" : "SUPPLIER"}
+                          kind={kind}
+                          value={modal.party}
+                          id={modal.partyId}
+                          onChange={(party, partyId) =>
+                            setModal((m) => ({ ...m, party, partyId }))
+                          }
+                          onSaved={() => setRefresh((x) => x + 1)}
+                        />
+                        {sales && (
+                          <CatalogPicker
+                            label="Doctor / staff"
+                            items={data?.catalog}
+                            catalogKind="STAFF"
+                            kind={kind}
+                            value={modal.staff}
+                            id={modal.staffId}
+                            onChange={(staff, staffId) =>
+                              setModal((m) => ({ ...m, staff, staffId }))
+                            }
+                            onSaved={() => setRefresh((x) => x + 1)}
+                          />
+                        )}
+                        <CatalogPicker
+                          label="Category"
+                          items={data?.catalog}
+                          catalogKind={sales ? "SALE_CATEGORY" : "BUY_CATEGORY"}
+                          kind={kind}
+                          value={modal.category}
+                          id={modal.categoryId}
+                          onChange={(category, categoryId) =>
+                            setModal((m) => ({ ...m, category, categoryId }))
+                          }
+                          onSaved={() => setRefresh((x) => x + 1)}
+                        />
+                      </div>
+                    </section>
+
+                    <section className="spCard">
+                      <div className="spCardTitle">
+                        <span className="spCardIcon">
+                          <FileText size={18} />
+                        </span>
+                        <div>
+                          <b>Amount & VAT</b>
+                          <small>UAE standard rate 5% is applied automatically</small>
+                        </div>
+                      </div>
+                      <div className="spForm">
+                        <Field label="Amount before VAT (AED)">
+                          <input
+                            className="spMoneyInput"
+                            required
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={modal.before}
+                            onChange={(e) => change("before", e.target.value)}
+                          />
+                        </Field>
+                        <Group label="VAT">
+                          <div className="spSegment" role="group" aria-label="VAT">
+                            {[
+                              ["STANDARD", "5% VAT"],
+                              ["NONE", "No VAT"],
+                              ["CUSTOM", "Custom"],
+                            ].map(([value, label]) => (
+                              <button
+                                type="button"
+                                key={value}
+                                aria-pressed={modal.vatMode === value}
+                                onClick={() => change("vatMode", value)}
                               >
-                                {PAYMENT_METHODS.map((method) => (
-                                  <option key={method}>{method}</option>
-                                ))}
-                              </select>
-                            </Field>
-                            <Field label="Payment date">
-                              <input
-                                required
-                                type="date"
-                                min={modal.date}
-                                value={modal.paymentDate}
-                                onChange={(e) =>
-                                  change("paymentDate", e.target.value)
-                                }
-                              />
-                            </Field>
-                            {modal.paymentMode === "PARTIAL" && (
-                              <Field label="Amount paid now (AED)">
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </Group>
+                        {modal.vatMode === "CUSTOM" && (
+                          <Field label="VAT amount on the invoice (AED)">
+                            <input
+                              className="spMoneyInput"
+                              required
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              step="0.01"
+                              value={modal.vat}
+                              onChange={(e) => change("vat", e.target.value)}
+                            />
+                          </Field>
+                        )}
+                      </div>
+                    </section>
+
+                    {modal.action === "create" && (
+                      <section className="spCard">
+                        <div className="spCardTitle">
+                          <span className="spCardIcon">
+                            <Wallet size={18} />
+                          </span>
+                          <div>
+                            <b>Payment</b>
+                            <small>
+                              {sales
+                                ? "How the customer paid for this invoice"
+                                : "How this bill was paid"}
+                            </small>
+                          </div>
+                        </div>
+                        <div
+                          className="spPayGrid"
+                          role="group"
+                          aria-label="Payment method"
+                        >
+                          {[
+                            ["Cash", "Cash", "Updates Cash Control"],
+                            ["Card", "Card", "POS / card machine"],
+                            ["Payment Link", "Payment link", "Online link"],
+                            ["Bank Transfer", "Bank transfer", "Direct to bank"],
+                          ].map(([method, label, hint]) => (
+                            <button
+                              type="button"
+                              key={method}
+                              className="spPayChip"
+                              aria-pressed={
+                                ["FULL", "PARTIAL"].includes(modal.paymentMode) &&
+                                modal.method === method
+                              }
+                              onClick={() =>
+                                setModal((m) => ({
+                                  ...m,
+                                  paymentMode:
+                                    m.paymentMode === "PARTIAL" ? "PARTIAL" : "FULL",
+                                  method,
+                                }))
+                              }
+                            >
+                              <b>{label}</b>
+                              <small>{hint}</small>
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            className="spPayChip"
+                            aria-pressed={modal.paymentMode === "SPLIT"}
+                            onClick={() => change("paymentMode", "SPLIT")}
+                          >
+                            <b>Split payment</b>
+                            <small>Up to 8 methods</small>
+                          </button>
+                          <button
+                            type="button"
+                            className="spPayChip"
+                            aria-pressed={modal.paymentMode === "CREDIT"}
+                            onClick={() => change("paymentMode", "CREDIT")}
+                          >
+                            <b>Pay later</b>
+                            <small>Invoice on credit</small>
+                          </button>
+                        </div>
+                        <div className="spForm spTopGap">
+                          {!["CREDIT", "SPLIT"].includes(modal.paymentMode) && (
+                            <>
+                              <Group label="Amount received">
+                                <div
+                                  className="spSegment"
+                                  role="group"
+                                  aria-label="Amount received"
+                                >
+                                  {[
+                                    ["FULL", "Paid in full"],
+                                    ["PARTIAL", "Part payment"],
+                                  ].map(([value, label]) => (
+                                    <button
+                                      type="button"
+                                      key={value}
+                                      aria-pressed={modal.paymentMode === value}
+                                      onClick={() => change("paymentMode", value)}
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </Group>
+                              <Field label="Payment method">
+                                <select
+                                  value={modal.method}
+                                  onChange={(e) => change("method", e.target.value)}
+                                >
+                                  {PAYMENT_METHODS.map((method) => (
+                                    <option key={method}>{method}</option>
+                                  ))}
+                                </select>
+                              </Field>
+                              <Field label="Payment date">
                                 <input
                                   required
-                                  type="number"
-                                  min="0.01"
-                                  step="0.01"
-                                  max={total || undefined}
-                                  value={modal.paid}
+                                  type="date"
+                                  min={modal.date}
+                                  value={modal.paymentDate}
                                   onChange={(e) =>
-                                    change("paid", e.target.value)
+                                    change("paymentDate", e.target.value)
                                   }
                                 />
                               </Field>
-                            )}
-                          </>
-                        )}
-                        {modal.paymentMode === "SPLIT" && (
-                          <div className="spWide">
-                            <Field label="Payment date">
-                              <input
-                                required
-                                type="date"
-                                min={modal.date}
-                                value={modal.paymentDate}
-                                onChange={(e) =>
-                                  change("paymentDate", e.target.value)
-                                }
+                              {modal.paymentMode === "PARTIAL" && (
+                                <Field label="Amount paid now (AED)">
+                                  <input
+                                    className="spMoneyInput"
+                                    required
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0.01"
+                                    step="0.01"
+                                    max={total || undefined}
+                                    value={modal.paid}
+                                    onChange={(e) => change("paid", e.target.value)}
+                                  />
+                                </Field>
+                              )}
+                            </>
+                          )}
+                          {modal.paymentMode === "SPLIT" && (
+                            <div className="spWide">
+                              <Field label="Payment date">
+                                <input
+                                  required
+                                  type="date"
+                                  min={modal.date}
+                                  value={modal.paymentDate}
+                                  onChange={(e) =>
+                                    change("paymentDate", e.target.value)
+                                  }
+                                />
+                              </Field>
+                              <PaymentParts
+                                values={modal.payments}
+                                onChange={(v) => change("payments", v)}
                               />
-                            </Field>
-                            <PaymentParts
-                              values={modal.payments}
-                              onChange={(v) => change("payments", v)}
+                            </div>
+                          )}
+                          {modal.paymentMode === "CREDIT" && (
+                            <p className="spInfo spWide">
+                              No payment is recorded now. The full amount stays
+                              on the {sales ? "customer" : "supplier"} account
+                              until it is settled from <b>Outstanding</b>.
+                            </p>
+                          )}
+                        </div>
+                      </section>
+                    )}
+
+                    <section className="spCard">
+                      <div className="spForm">
+                        {modal.action === "edit" && (
+                          <Field label="Reason for correction" wide>
+                            <input
+                              required
+                              maxLength={1000}
+                              value={modal.reason}
+                              onChange={(e) => change("reason", e.target.value)}
                             />
-                          </div>
+                          </Field>
                         )}
-                      </>
-                    )}
-                    {modal.action === "edit" && (
-                      <Field label="Reason for correction" wide>
-                        <input
-                          required
-                          maxLength={1000}
-                          value={modal.reason}
-                          onChange={(e) => change("reason", e.target.value)}
-                        />
-                      </Field>
-                    )}
-                    <Field label="Remarks" wide>
-                      <textarea
-                        maxLength={2000}
-                        rows={3}
-                        value={modal.remarks}
-                        onChange={(e) => change("remarks", e.target.value)}
-                      />
-                    </Field>
+                        <Field label="Remarks" wide>
+                          <textarea
+                            maxLength={2000}
+                            rows={3}
+                            placeholder="Optional note printed on the invoice"
+                            value={modal.remarks}
+                            onChange={(e) => change("remarks", e.target.value)}
+                          />
+                        </Field>
+                      </div>
+                    </section>
                   </div>
-                  <div className="spInvoiceTotal">
-                    <span>VAT {money(vat)}</span>
-                    <strong>Total {money(total)}</strong>
-                  </div>
-                  <p className="spNote">
-                    {modal.action === "edit"
-                      ? "Existing payments remain linked. Edit payments from invoice details when needed."
-                      : modal.paymentMode === "SPLIT"
-                        ? `Paid ${money(modal.payments.reduce((n, p) => n + Number(p.amount || 0), 0))} · Cash ${money(modal.payments.filter((p) => p.method === "Cash").reduce((n, p) => n + Number(p.amount || 0), 0))} · Remaining ${money(total - modal.payments.reduce((n, p) => n + Number(p.amount || 0), 0))}`
-                        : modal.paymentMode === "CREDIT"
-                          ? "No payment is recorded now. Record a payment when this invoice is settled."
-                          : modal.method === "Cash"
-                            ? `${sales ? "Cash In" : "Cash Out"} of ${money(modal.paymentMode === "FULL" ? total : modal.paid)} will be recorded automatically. Do not enter it again in Cash Control.`
-                            : "This payment is recorded in the register only. It does not change the cash or bank ledger."}
-                  </p>
-                </>
+
+                  <aside className="spEntrySummary" aria-label="Invoice summary">
+                    {(() => {
+                      const paidNow =
+                        modal.action !== "create"
+                          ? null
+                          : modal.paymentMode === "CREDIT"
+                            ? 0
+                            : modal.paymentMode === "SPLIT"
+                              ? modal.payments.reduce(
+                                  (n, p) => n + Number(p.amount || 0),
+                                  0,
+                                )
+                              : modal.paymentMode === "PARTIAL"
+                                ? Number(modal.paid || 0)
+                                : total;
+                      const cashNow =
+                        paidNow == null
+                          ? 0
+                          : modal.paymentMode === "SPLIT"
+                            ? modal.payments
+                                .filter((p) => p.method === "Cash")
+                                .reduce((n, p) => n + Number(p.amount || 0), 0)
+                            : modal.method === "Cash"
+                              ? paidNow
+                              : 0;
+                      const due = paidNow == null ? null : total - paidNow;
+                      const state =
+                        paidNow == null
+                          ? null
+                          : paidNow <= 0
+                            ? ["On credit", "credit"]
+                            : due > 0.004
+                              ? ["Part paid", "partial"]
+                              : due < -0.004
+                                ? ["Over-paid", "over"]
+                                : ["Paid in full", "paid"];
+                      return (
+                        <>
+                          <div className="spSummaryHead">
+                            <small>INVOICE SUMMARY</small>
+                            {state && (
+                              <span className={`spStatePill ${state[1]}`}>
+                                {state[0]}
+                              </span>
+                            )}
+                          </div>
+                          <div className="spSummaryParty">
+                            <b>{modal.party || (sales ? "No customer selected" : "No supplier selected")}</b>
+                            <small>
+                              {[modal.invoice, modal.category, sales && modal.staff]
+                                .filter(Boolean)
+                                .join(" · ") || "Invoice details"}
+                            </small>
+                          </div>
+                          <div className="spSummaryRow">
+                            <span>Before VAT</span>
+                            <b>{money(before)}</b>
+                          </div>
+                          <div className="spSummaryRow">
+                            <span>
+                              VAT{" "}
+                              {modal.vatMode === "STANDARD"
+                                ? "5%"
+                                : modal.vatMode === "NONE"
+                                  ? "0%"
+                                  : ""}
+                            </span>
+                            <b>{money(vat)}</b>
+                          </div>
+                          <div className="spSummaryTotal">
+                            <span>Total</span>
+                            <strong>{money(total)}</strong>
+                          </div>
+                          {paidNow != null && (
+                            <>
+                              <div className="spSummaryRow">
+                                <span>Paid now</span>
+                                <b className="good">{money(paidNow)}</b>
+                              </div>
+                              {cashNow > 0 && (
+                                <div className="spSummaryRow sub">
+                                  <span>of which cash</span>
+                                  <b>{money(cashNow)}</b>
+                                </div>
+                              )}
+                              <div className="spSummaryRow">
+                                <span>Balance due</span>
+                                <b className={due > 0.004 ? "bad" : ""}>
+                                  {money(Math.max(due, 0))}
+                                </b>
+                              </div>
+                            </>
+                          )}
+                          <p className="spLedgerNote">
+                            {modal.action === "edit"
+                              ? "Existing payments stay linked. Edit payments from the invoice details."
+                              : cashNow > 0
+                                ? `${sales ? "Cash In" : "Cash Out"} of ${money(cashNow)} is posted to Cash Control automatically. Do not enter it again.`
+                                : modal.paymentMode === "CREDIT"
+                                  ? "Nothing is posted to cash today."
+                                  : "Non-cash payment: recorded on the invoice only. Cash Control is not changed."}
+                          </p>
+                          <div className="spSummaryActions">
+                            <button
+                              type="submit"
+                              value="save"
+                              className="spCompleteButton"
+                              disabled={busy}
+                            >
+                              <CheckCircle2 size={19} />
+                              {busy
+                                ? "Saving…"
+                                : modal.action === "edit"
+                                  ? "Save correction"
+                                  : sales
+                                    ? "Save sale"
+                                    : "Save entry"}
+                            </button>
+                            {modal.action === "create" && (
+                              <div className="spSummaryRowButtons">
+                                <button
+                                  type="submit"
+                                  value="next"
+                                  className="btn btnSoft"
+                                  disabled={busy}
+                                >
+                                  Save & add next
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btnSoft"
+                                  disabled={busy || !(total > 0)}
+                                  onClick={() => previewInvoice(null)}
+                                >
+                                  <Printer size={15} /> Preview
+                                </button>
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              className="spCancelLink"
+                              disabled={busy}
+                              onClick={closeEntry}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          <small className="spKeyHint">
+                            Ctrl + Enter save · Ctrl + Shift + Enter save & next
+                          </small>
+                        </>
+                      );
+                    })()}
+                  </aside>
+                </div>
               )}
               {["pay", "editPayment"].includes(modal.action) && (
                 <>
@@ -1630,6 +1884,7 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
                   </div>
                 </div>
               )}
+              {!["create", "edit"].includes(modal.action) && (
               <footer className="spFormActions">
                 <button
                   type="button"
@@ -1677,9 +1932,7 @@ export default function CommerceCenter({ kind, user, invoiceRequest }) {
                           : "Save entry"}
                 </button>
               </footer>
-              <p className="spNote">
-                Ctrl + Enter: save · Ctrl + Shift + Enter: save & add next
-              </p>
+              )}
             </form>
           )}
         </Modal>

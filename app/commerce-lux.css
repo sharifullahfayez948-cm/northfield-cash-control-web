@@ -1,0 +1,678 @@
+/* Northfield luxury layer for Sales, Purchases and Accounts.
+   Loaded after commerce.css: navy + gold, glass cards, two-column entry
+   with a sticky invoice summary. Light theme first, dark below. */
+
+.spWorkspace {
+  --spBorder: #e3dccb;
+  --spPanel: #ffffff;
+  --spPanel2: #fbf9f4;
+  --spText: #0f2a3d;
+  --spMuted: #6b7d8b;
+  --spNavy: #08263a;
+  --spNavy2: #123b54;
+  --spGold: #c99437;
+  --spGoldSoft: #f6ecd8;
+  --spGood: #127d5c;
+  --spBad: #b83e34;
+  --spShadow: 0 18px 44px rgba(16, 42, 61, 0.08);
+  --spRadius: 20px;
+}
+[data-theme="dark"] .spWorkspace {
+  --spBorder: rgba(201, 148, 55, 0.18);
+  --spPanel: #0f2638;
+  --spPanel2: #0b1e2d;
+  --spText: #eaf0f5;
+  --spMuted: #9fb1c0;
+  --spGoldSoft: rgba(201, 148, 55, 0.12);
+  --spGood: #46c79b;
+  --spBad: #f08a80;
+  --spShadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+}
+
+/* ---------- page hero ---------- */
+.spWorkspace > .spHeading {
+  position: relative;
+  margin: 6px 0 20px;
+  padding: 24px 26px;
+  border-radius: 24px;
+  color: #fff;
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(201, 148, 55, 0.22), transparent 55%),
+    linear-gradient(135deg, #0b2e45 0%, #08263a 60%, #061b2a 100%);
+  border: 1px solid rgba(201, 148, 55, 0.35);
+  box-shadow: 0 22px 50px rgba(8, 38, 58, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.spWorkspace > .spHeading::after {
+  content: "";
+  position: absolute;
+  left: 26px;
+  right: 26px;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #c99437, transparent);
+}
+.spWorkspace > .spHeading small {
+  color: #e2bd73;
+  letter-spacing: 0.22em;
+}
+.spWorkspace > .spHeading h1 {
+  color: #fff;
+  font-size: 30px;
+  letter-spacing: -0.6px;
+}
+.spWorkspace > .spHeading p {
+  color: #b9c9d6;
+  margin: 0;
+}
+.spWorkspace > .spHeading .btn {
+  min-height: 42px;
+  border-radius: 13px;
+  font-weight: 700;
+}
+.spWorkspace > .spHeading .btnSoft {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #eef3f7;
+}
+.spWorkspace > .spHeading .btnSoft:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.13);
+}
+.spWorkspace > .spHeading .btnPrimary {
+  background: linear-gradient(135deg, #e8c27a, #c99437);
+  color: #08263a;
+  border: 0;
+  box-shadow: 0 10px 26px rgba(201, 148, 55, 0.35);
+}
+
+/* ---------- filters, outstanding, kpis, tabs ---------- */
+.spWorkspace .spFilters {
+  border-radius: var(--spRadius);
+  background: var(--spPanel);
+  border: 1px solid var(--spBorder);
+  box-shadow: var(--spShadow);
+  padding: 16px 18px;
+}
+.spWorkspace .spFilters > .btn {
+  min-height: 42px;
+  border-radius: 12px;
+}
+.spWorkspace .spField > span {
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  color: var(--spMuted);
+  text-transform: uppercase;
+}
+.spWorkspace .spField input,
+.spWorkspace .spField select,
+.spWorkspace .spField textarea {
+  min-height: 46px;
+  border-radius: 13px;
+  border: 1px solid var(--spBorder);
+  background: var(--spPanel2);
+  color: var(--spText);
+  font-size: 14px;
+  transition: border-color 0.16s, box-shadow 0.16s, background 0.16s;
+}
+.spWorkspace .spField textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+.spWorkspace .spField input:focus,
+.spWorkspace .spField select:focus,
+.spWorkspace .spField textarea:focus {
+  outline: none;
+  border-color: var(--spGold);
+  background: var(--spPanel);
+  box-shadow: 0 0 0 4px rgba(201, 148, 55, 0.14);
+}
+.spWorkspace .spOutstanding {
+  border-radius: var(--spRadius);
+  padding: 20px 24px;
+  border: 1px solid rgba(201, 148, 55, 0.5);
+  background:
+    radial-gradient(90% 160% at 0% 0%, rgba(201, 148, 55, 0.18), transparent 60%),
+    linear-gradient(115deg, #0b2e45, #154760);
+  box-shadow: 0 16px 36px rgba(8, 38, 58, 0.2);
+  transition: transform 0.16s, box-shadow 0.16s;
+}
+.spWorkspace .spOutstanding:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 20px 42px rgba(8, 38, 58, 0.28);
+}
+.spWorkspace .spOutstanding svg {
+  color: #e2bd73;
+}
+.spWorkspace .spKpis > div {
+  position: relative;
+  border-radius: var(--spRadius);
+  padding: 20px 20px 18px 24px;
+  background: var(--spPanel);
+  border: 1px solid var(--spBorder);
+  box-shadow: var(--spShadow);
+  overflow: hidden;
+}
+.spWorkspace .spKpis > div::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--spNavy2);
+}
+.spWorkspace .spKpis > div:nth-child(2)::before { background: var(--spGood); }
+.spWorkspace .spKpis > div:nth-child(3)::before { background: var(--spGold); }
+.spWorkspace .spKpis > div:nth-child(4)::before { background: var(--spBad); }
+.spWorkspace .spKpis span {
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.spWorkspace .spKpis span svg {
+  color: var(--spGold);
+}
+.spWorkspace .spKpis strong {
+  font-size: 24px;
+  color: var(--spText);
+}
+.spWorkspace .spKpis > div:nth-child(4) strong {
+  color: var(--spBad);
+}
+.spWorkspace .spTabs {
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--spBorder);
+  border-radius: 16px;
+  background: var(--spPanel);
+  box-shadow: var(--spShadow);
+  width: fit-content;
+  max-width: 100%;
+}
+.spWorkspace .spTabs button {
+  border: 0;
+  border-radius: 11px;
+  padding: 11px 16px;
+  font-size: 13px;
+}
+.spWorkspace .spTabs button[aria-selected="true"] {
+  color: var(--spNavy);
+  background: linear-gradient(135deg, #f4dca8, #e2b866);
+  box-shadow: 0 8px 20px rgba(201, 148, 55, 0.25);
+}
+[data-theme="dark"] .spWorkspace .spTabs button[aria-selected="true"] {
+  color: #08263a;
+}
+
+/* ---------- panels and tables ---------- */
+.spWorkspace .spPanel {
+  border-radius: var(--spRadius);
+  border: 1px solid var(--spBorder);
+  box-shadow: var(--spShadow);
+  background: var(--spPanel);
+}
+.spWorkspace .spPanel h3 {
+  font-size: 15px;
+  letter-spacing: -0.2px;
+}
+.spWorkspace table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+}
+.spWorkspace th {
+  background: var(--spNavy) !important;
+  color: #e9c886 !important;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 13px 12px;
+  border: 0;
+  white-space: nowrap;
+}
+.spWorkspace td {
+  padding: 12px;
+  border-bottom: 1px solid var(--spBorder);
+  font-variant-numeric: tabular-nums;
+}
+.spWorkspace tbody tr:nth-child(even) td {
+  background: var(--spPanel2);
+}
+.spWorkspace tbody tr:hover td {
+  background: var(--spGoldSoft);
+}
+
+/* ---------- modal ---------- */
+.spWorkspace .spModal {
+  border-radius: 26px;
+  border: 1px solid rgba(201, 148, 55, 0.4);
+  background: var(--spPanel2);
+  padding: 0;
+  box-shadow: 0 30px 100px rgba(3, 22, 46, 0.45);
+}
+.spWorkspace .spModal > header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 0;
+  padding: 20px 26px;
+  color: #fff;
+  background:
+    radial-gradient(120% 160% at 100% 0%, rgba(201, 148, 55, 0.22), transparent 55%),
+    linear-gradient(135deg, #0b2e45, #08263a);
+  border-bottom: 2px solid var(--spGold);
+}
+.spWorkspace .spModal > header small {
+  color: #e2bd73;
+}
+.spWorkspace .spModal > header h2 {
+  color: #fff;
+  margin: 6px 0 0;
+}
+.spWorkspace .spModal > header .btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border-radius: 12px;
+}
+.spWorkspace .spModal > :not(header) {
+  margin-left: 26px;
+  margin-right: 26px;
+}
+.spWorkspace .spModal > form {
+  padding-bottom: 24px;
+}
+.spWorkspace .spModal > form > :first-child,
+.spWorkspace .spModal > header + * {
+  margin-top: 22px;
+}
+.spWorkspace .spModalWide {
+  width: min(1180px, 96vw);
+}
+
+/* ---------- two-column entry ---------- */
+.spEntry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+  align-items: start;
+}
+.spEntryMain {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.spCard {
+  padding: 20px;
+  border-radius: var(--spRadius);
+  background: var(--spPanel);
+  border: 1px solid var(--spBorder);
+  box-shadow: var(--spShadow);
+}
+.spCardRaised {
+  position: relative;
+  z-index: 2; /* keeps directory dropdowns above the next cards */
+}
+.spCardTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.spCardTitle b {
+  display: block;
+  font-size: 15px;
+  color: var(--spText);
+}
+.spCardTitle small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--spMuted);
+}
+.spCardIcon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 13px;
+  color: var(--spGold);
+  background: var(--spGoldSoft);
+  border: 1px solid rgba(201, 148, 55, 0.3);
+}
+.spEntry .spForm {
+  gap: 14px;
+}
+.spTopGap {
+  margin-top: 16px;
+}
+.spInfo {
+  margin: 0;
+  padding: 13px 15px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--spText);
+  background: var(--spGoldSoft);
+  border: 1px solid rgba(201, 148, 55, 0.3);
+}
+.spMoneyInput {
+  font-size: 18px !important;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+}
+
+/* segmented buttons */
+.spSegment {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  min-height: 46px;
+  border-radius: 13px;
+  border: 1px solid var(--spBorder);
+  background: var(--spPanel2);
+}
+.spSegment button {
+  flex: 1;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--spMuted);
+  font-weight: 750;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.spSegment button:hover:not(:disabled) {
+  color: var(--spText);
+}
+.spSegment button[aria-pressed="true"] {
+  color: #fff;
+  background: linear-gradient(135deg, #154760, #08263a);
+  box-shadow: 0 6px 14px rgba(8, 38, 58, 0.22), inset 0 0 0 1px rgba(201, 148, 55, 0.5);
+}
+
+/* payment method tiles */
+.spPayGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.spPayChip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 68px;
+  padding: 13px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--spBorder);
+  background: var(--spPanel2);
+  color: var(--spText);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.spPayChip b {
+  font-size: 14px;
+}
+.spPayChip small {
+  font-size: 11px;
+  color: var(--spMuted);
+}
+.spPayChip:hover {
+  transform: translateY(-1px);
+  border-color: rgba(201, 148, 55, 0.6);
+}
+.spPayChip[aria-pressed="true"] {
+  border-color: var(--spGold);
+  background: linear-gradient(135deg, #0f3954, #08263a);
+  color: #fff;
+  box-shadow: 0 12px 26px rgba(8, 38, 58, 0.25), inset 0 0 0 1px var(--spGold);
+}
+.spPayChip[aria-pressed="true"] small {
+  color: #e2bd73;
+}
+
+/* sticky summary */
+.spEntrySummary {
+  position: sticky;
+  top: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 22px;
+  border-radius: 24px;
+  color: #eaf0f5;
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(201, 148, 55, 0.2), transparent 60%),
+    linear-gradient(160deg, #0d3049, #08263a 55%, #061b2a);
+  border: 1px solid rgba(201, 148, 55, 0.45);
+  box-shadow: 0 24px 60px rgba(8, 38, 58, 0.32);
+}
+.spSummaryHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.spSummaryHead small {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: #e2bd73;
+}
+.spStatePill {
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  border: 1px solid transparent;
+}
+.spStatePill.paid { color: #7fe0bd; background: rgba(70, 199, 155, 0.12); border-color: rgba(70, 199, 155, 0.35); }
+.spStatePill.partial { color: #f2cf8b; background: rgba(201, 148, 55, 0.14); border-color: rgba(201, 148, 55, 0.4); }
+.spStatePill.credit { color: #c9d6e1; background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.18); }
+.spStatePill.over { color: #ffb1a8; background: rgba(240, 138, 128, 0.12); border-color: rgba(240, 138, 128, 0.4); }
+.spSummaryParty {
+  padding: 13px 14px;
+  margin-bottom: 10px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.spSummaryParty b {
+  display: block;
+  font-size: 15px;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+.spSummaryParty small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: #a9bccb;
+  overflow-wrap: anywhere;
+}
+.spSummaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+}
+.spSummaryRow span {
+  color: #a9bccb;
+}
+.spSummaryRow b {
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.spSummaryRow.sub {
+  padding-top: 0;
+  font-size: 12px;
+}
+.spSummaryRow.sub span {
+  padding-left: 12px;
+}
+.spSummaryRow b.good { color: #7fe0bd; }
+.spSummaryRow b.bad { color: #ffb1a8; }
+.spSummaryTotal {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 15px 16px;
+  border-radius: 16px;
+  background: rgba(201, 148, 55, 0.12);
+  border: 1px solid rgba(201, 148, 55, 0.4);
+}
+.spSummaryTotal span {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #e2bd73;
+}
+.spSummaryTotal strong {
+  font-size: 24px;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.spLedgerNote {
+  margin: 14px 0 4px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #a9bccb;
+}
+.spSummaryActions {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 10px;
+}
+.spCompleteButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 54px;
+  border: 0;
+  border-radius: 16px;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #08263a;
+  background: linear-gradient(135deg, #f1d391, #c99437);
+  box-shadow: 0 14px 32px rgba(201, 148, 55, 0.35);
+  cursor: pointer;
+  transition: transform 0.16s, box-shadow 0.16s;
+}
+.spCompleteButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 38px rgba(201, 148, 55, 0.45);
+}
+.spSummaryRowButtons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.spEntrySummary .btnSoft {
+  min-height: 42px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #eef3f7;
+  font-size: 12.5px;
+  font-weight: 750;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.spCancelLink {
+  border: 0;
+  background: none;
+  color: #a9bccb;
+  font-size: 12.5px;
+  padding: 8px;
+  cursor: pointer;
+}
+.spCancelLink:hover {
+  color: #fff;
+}
+.spKeyHint {
+  margin-top: 4px;
+  text-align: center;
+  font-size: 10.5px;
+  color: #7f95a6;
+}
+
+/* split payment lines inside a card */
+.spEntry .spPaymentParts {
+  margin-top: 12px;
+}
+
+/* ---------- account pages ---------- */
+.spWorkspace .spAccountList,
+.spWorkspace .spAccountDetail {
+  border-radius: var(--spRadius);
+  box-shadow: var(--spShadow);
+}
+.spWorkspace .spAccountTotals > div {
+  border-radius: 16px;
+  background: var(--spPanel2);
+}
+.spWorkspace .spAvatar {
+  background: linear-gradient(140deg, #0f3954, #08263a);
+  box-shadow: inset 0 0 0 1px rgba(201, 148, 55, 0.55);
+  color: #f1d391;
+}
+.spWorkspace .spAccountRow.selected {
+  border-color: var(--spGold);
+  background: var(--spGoldSoft);
+}
+.spWorkspace .spAccountFilters button.active {
+  background: var(--spNavy);
+  border-color: var(--spGold);
+  color: #f1d391;
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 1100px) {
+  .spEntry {
+    grid-template-columns: 1fr;
+  }
+  .spEntrySummary {
+    position: static;
+  }
+}
+@media (max-width: 760px) {
+  .spPayGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .spWorkspace > .spHeading {
+    padding: 20px;
+  }
+  .spWorkspace > .spHeading h1 {
+    font-size: 24px;
+  }
+  .spWorkspace .spModal > :not(header) {
+    margin-left: 14px;
+    margin-right: 14px;
+  }
+  .spWorkspace .spTabs {
+    width: 100%;
+  }
+}
